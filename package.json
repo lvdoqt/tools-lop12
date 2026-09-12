@@ -1,9 +1,35 @@
 {
+<<<<<<< HEAD
   "name": "math-tools",
   "private": true,
   "engines": { "node": "22.x" },
   "scripts": {
     "build": "npm --prefix frontend run build",
     "lint": "npm --prefix frontend run lint"
+=======
+  "name": "frontend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "oxlint",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "axios": "^1.19.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-dropzone": "^20.1.0",
+    "react-router-dom": "^7.18.2"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.4",
+    "oxlint": "^1.75.0",
+    "vite": "^8.2.0"
+>>>>>>> 5f601cc6c847888b22d3c00872fb648923bfdd18
   }
 }
