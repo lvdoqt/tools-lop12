@@ -25,6 +25,8 @@ TikZ và TeX cần backend cùng kết nối Internet đến LaTeX.Online. Công
 3. Chọn preset **Vite**. `vercel.json` đã cấu hình cài frontend bằng `npm --prefix frontend ci`, build bằng `npm --prefix frontend run build`, output là `frontend/dist`.
 4. Deploy. Node.js được ghim ở 22.x trong `package.json`, Python ở 3.12 trong `.python-version`. Thư viện Python được cài từ `requirements.txt` ở thư mục gốc.
 
+`requirements.txt` ở thư mục gốc khai báo trực tiếp các thư viện để bước phân tích dependency của Vercel không phải đọc file dẫn bằng `-r`. Khi cập nhật thư viện, giữ danh sách này đồng bộ với `backend/requirements.txt` dùng để chạy local.
+
 Frontend và API dùng chung domain: `/api/*` chuyển đến Python function; các trang giao diện chuyển đến `index.html`. API mặc định dùng đường dẫn tương đối `/api`, không cần biến môi trường hay khóa dịch vụ. Nếu từng đặt `VITE_API_BASE_URL` trỏ đến localhost, hãy xóa biến đó trước khi deploy.
 
 Giới hạn:
