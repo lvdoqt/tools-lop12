@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 __pycache__/
 *.py[cod]
 .venv/
@@ -8,7 +7,3 @@ dist/
 .env
 .env.*
 !.env.example
-=======
-node_modules/
-.env
->>>>>>> 5f601cc6c847888b22d3c00872fb648923bfdd18
