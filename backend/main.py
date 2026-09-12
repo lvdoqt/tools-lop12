@@ -1,332 +1,255 @@
 """
-Tools All — FastAPI Backend Server
-Handles PDF conversion, Google Drive downloads, and more.
+Công cụ cho Toán — FastAPI Backend Server
+Handles LaTeX/TikZ rendering and PDF tools.
 """
 
-import os
 import uuid
-import shutil
+import base64
+from io import BytesIO
 import tempfile
 import logging
-import urllib.parse
-import unicodedata
+import zipfile
+import json
 from pathlib import Path
-from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Query, Body
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response, JSONResponse
-from pydantic import BaseModel
+from fastapi.responses import Response, JSONResponse
+from starlette.concurrency import run_in_threadpool
+from pydantic import BaseModel, Field
+import pymupdf
 
-from services.pdf_converter import (
-    get_pdf_info,
-    generate_pdf_preview,
-    run_conversion_async,
-    run_save_text_async,
-    extract_text_from_docx,
-    extract_text_from_pdf,
-)
-from services.drive_downloader import (
-    extract_file_id,
-    detect_doc_type,
-    get_file_info,
-    generate_download_links,
-    generate_export_link,
-    download_file_proxy,
-)
+if __package__:
+    from .services.tikz_renderer import render_tikz
+else:
+    from services.tikz_renderer import render_tikz
 
-# ===== Config =====
-UPLOAD_DIR = Path(tempfile.gettempdir()) / "tools_all_uploads"
-OUTPUT_DIR = Path(tempfile.gettempdir()) / "tools_all_outputs"
-
+MAX_PDF_BYTES = 4 * 1024 * 1024
+MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Create temp directories on startup, clean on shutdown."""
-    UPLOAD_DIR.mkdir(exist_ok=True)
-    OUTPUT_DIR.mkdir(exist_ok=True)
-    logger.info(f"📁 Upload dir: {UPLOAD_DIR}")
-    logger.info(f"📁 Output dir: {OUTPUT_DIR}")
-    yield
-    try:
-        shutil.rmtree(UPLOAD_DIR, ignore_errors=True)
-        shutil.rmtree(OUTPUT_DIR, ignore_errors=True)
-    except Exception:
-        pass
+def check_output_size(size: int):
+    if size > MAX_RESPONSE_BYTES:
+        raise HTTPException(413, "Kết quả vượt quá 4 MB. Hãy giảm số trang, giảm DPI hoặc chia thành nhiều lần xử lý.")
+
+
+def pdf_response(content: bytes, file_format: str, pages: int, files: int = 1):
+    check_output_size(len(content))
+    media_type = "application/pdf" if file_format == "pdf" else "application/zip"
+    return Response(content, media_type=media_type, headers={
+        "Content-Disposition": f'attachment; filename="pdf-output.{file_format}"',
+        "Cache-Control": "no-store",
+        "X-PDF-Pages": str(pages),
+        "X-PDF-Files": str(files),
+    })
 
 
 app = FastAPI(
-    title="Tools All API",
-    description="Backend API cho bộ công cụ xử lý file đa năng",
+    title="Công cụ cho Toán API",
+    description="Backend API biên dịch LaTeX/TikZ và xử lý tài liệu PDF",
     version="2.1.0",
-    lifespan=lifespan,
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json",
 )
 
 # CORS — allow all local origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-PDF-Pages", "X-PDF-Files", "Content-Disposition"],
 )
 
 
 # ===== Health Check =====
 @app.get("/api/health")
 async def health_check():
-    return {"status": "ok", "message": "Tools All API 2.1 đang hoạt động 🚀"}
+    return {"status": "ok", "message": "Công cụ cho Toán API 2.1 đang hoạt động 🚀"}
 
 
 # ===================================================
-#   PDF TO WORD ENDPOINTS
+#   TIKZ RENDERER ENDPOINTS
 # ===================================================
 
-@app.post("/api/pdf/upload")
-async def upload_pdf(file: UploadFile = File(...)):
-    """Upload a PDF file and return file metadata & analysis."""
-    if not file.filename.lower().endswith('.pdf'):
-        raise HTTPException(400, "Chỉ hỗ trợ file PDF (.pdf)")
-
-    # Save uploaded file
-    file_id = str(uuid.uuid4())
-    upload_path = UPLOAD_DIR / f"{file_id}.pdf"
-
-    content = await file.read()
-    if len(content) > 100 * 1024 * 1024:
-        raise HTTPException(400, "File quá lớn (tối đa 100MB)")
-
-    with open(upload_path, "wb") as f:
-        f.write(content)
-
-    # Get PDF metadata & structure analysis
-    try:
-        info = get_pdf_info(str(upload_path))
-    except Exception as e:
-        if upload_path.exists():
-            os.remove(upload_path)
-        raise HTTPException(400, f"Không thể phân tích PDF: {str(e)}")
-
-    return {
-        "file_id": file_id,
-        "filename": file.filename,
-        "size": len(content),
-        "info": info,
-    }
+class TikzRenderRequest(BaseModel):
+    source: str = Field(min_length=1, max_length=20_000)
+    dpi: int = Field(default=180, ge=72, le=300)
 
 
-@app.get("/api/pdf/preview/{file_id}")
-async def preview_pdf_page(
-    file_id: str,
-    page: int = Query(0, ge=0),
-    dpi: int = Query(150, ge=72, le=300)
-):
-    """Get high-resolution preview image of any PDF page."""
-    upload_path = UPLOAD_DIR / f"{file_id}.pdf"
-    if not upload_path.exists():
-        raise HTTPException(404, "File không tồn tại trên server")
-
-    try:
-        img_bytes = generate_pdf_preview(str(upload_path), page, dpi=dpi)
-        return Response(
-            content=img_bytes,
-            media_type="image/png",
-            headers={"Cache-Control": "public, max-age=3600"}
-        )
-    except Exception as e:
-        raise HTTPException(400, str(e))
-
-
-@app.post("/api/pdf/convert")
-async def convert_pdf(
-    file_id: str = Form(...),
-    mode: str = Form("math_hd"),
-    dpi: int = Form(250),
-    page_range: str = Form("all"),
-):
-    """
-    Convert PDF to Word document with specialized Math/Exam modes.
-    Modes:
-      - math_hd: Ultra-sharp math & geometry diagrams preservation (Recommended for Đề toán 12)
-      - editable_text: Editable text & tables (pdf2docx)
-      - hybrid: Editable text + extracted diagram pictures
-    """
-    upload_path = UPLOAD_DIR / f"{file_id}.pdf"
-    if not upload_path.exists():
-        raise HTTPException(404, "File PDF không tồn tại. Vui lòng upload lại.")
-
+@app.post("/api/tikz/render")
+async def tikz_render(request: TikzRenderRequest):
     output_id = str(uuid.uuid4())
-    output_path = OUTPUT_DIR / f"{output_id}.docx"
-
-    # Parse page range if specified
-    pages_to_convert = None
-    if page_range and page_range.lower() != "all":
-        try:
-            pages = []
-            parts = page_range.split(",")
-            for part in parts:
-                part = part.strip()
-                if "-" in part:
-                    start_p, end_p = map(int, part.split("-"))
-                    pages.extend(range(start_p - 1, end_p))
-                elif part.isdigit():
-                    pages.append(int(part) - 1)
-            if pages:
-                pages_to_convert = sorted(list(set(pages)))
-        except Exception:
-            pages_to_convert = None
-
     try:
-        result = await run_conversion_async(
-            pdf_path=str(upload_path),
-            output_path=str(output_path),
-            mode=mode,
-            pages=pages_to_convert,
-            dpi=dpi,
-        )
-
-        result["output_id"] = output_id
-        result["file_id"] = file_id
-        return result
-
-    except Exception as e:
-        if output_path.exists():
-            os.remove(output_path)
-        logger.error(f"Conversion error: {e}")
-        raise HTTPException(500, f"Lỗi chuyển đổi: {str(e)}")
-
-
-@app.get("/api/pdf/content/{output_id}")
-async def get_word_content(output_id: str):
-    """Get extracted text content of the converted Word document for preview/editing."""
-    output_path = OUTPUT_DIR / f"{output_id}.docx"
-    if not output_path.exists():
-        raise HTTPException(404, "File Word không tồn tại hoặc đã hết hạn")
-
-    text = extract_text_from_docx(str(output_path))
-    return {
-        "output_id": output_id,
-        "text": text,
-        "word_count": len(text.split()),
-        "char_count": len(text),
-    }
-
-
-class SaveDocxRequest(BaseModel):
-    text: str
-
-
-@app.post("/api/pdf/save/{output_id}")
-async def save_word_content(output_id: str, payload: SaveDocxRequest):
-    """
-    Save user-edited text back to the Word document (.docx) on server.
-    """
-    output_path = OUTPUT_DIR / f"{output_id}.docx"
-    
-    try:
-        result = await run_save_text_async(str(output_path), payload.text)
-        result["output_id"] = output_id
-        return result
-    except Exception as e:
-        logger.error(f"Error saving edited docx: {e}")
-        raise HTTPException(500, f"Lỗi lưu file Word: {str(e)}")
-
-
-@app.get("/api/pdf/download/{output_id}")
-async def download_word(output_id: str, filename: str = Query("document.docx")):
-    """
-    Download the converted/edited Word file with RFC 5987 safe filename encoding.
-    Bypasses UnicodeEncodeError for Vietnamese names like 'Đề_thi_toán_12.docx'.
-    """
-    output_path = OUTPUT_DIR / f"{output_id}.docx"
-    if not output_path.exists():
-        raise HTTPException(404, "File không tồn tại hoặc đã hết hạn")
-
-    # Encode filename safely for HTTP headers
-    encoded_filename = urllib.parse.quote(filename.encode('utf-8'))
-    # Strictly ascii fallback
-    clean_ascii = unicodedata.normalize('NFKD', filename).encode('ascii', 'ignore').decode('ascii')
-    safe_ascii_name = "".join(c for c in clean_ascii if c.isalnum() or c in "._- ") or "document.docx"
-
-    return FileResponse(
-        path=str(output_path),
-        filename=safe_ascii_name,
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={
-            "Content-Disposition": f"attachment; filename=\"{safe_ascii_name}\"; filename*=UTF-8''{encoded_filename}"
-        }
-    )
+        # Each request owns its files. Nothing must survive a later invocation.
+        with tempfile.TemporaryDirectory(prefix="tools-tikz-") as directory:
+            output_dir = Path(directory)
+            result = await run_in_threadpool(render_tikz, request.source, output_dir, output_id, request.dpi)
+            assets = {}
+            for file_format in ("png", "pdf", "tex"):
+                path = output_dir / f"{output_id}.{file_format}"
+                check_output_size(path.stat().st_size)
+                assets[file_format] = base64.b64encode(path.read_bytes()).decode("ascii")
+            response = JSONResponse({**result, "assets": assets}, headers={"Cache-Control": "no-store"})
+            # Count the encoded response, including base64 expansion and JSON.
+            check_output_size(len(response.body))
+            return response
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except Exception as exc:
+        logger.exception("TikZ render failed")
+        raise HTTPException(502, str(exc))
 
 
 # ===================================================
-#   GOOGLE DRIVE DOWNLOADER ENDPOINTS
+#   PDF TOOLS ENDPOINTS
 # ===================================================
 
-@app.post("/api/drive/parse")
-async def parse_drive_url(url: str = Form(...)):
-    """Parse a Google Drive URL and return file ID + download links."""
-    file_id = extract_file_id(url)
-    if not file_id:
-        raise HTTPException(400, "Link Google Drive không hợp lệ")
-
-    doc_type = detect_doc_type(url)
-    file_info = get_file_info(file_id)
-    links = generate_download_links(file_id, url)
-
-    return {
-        "file_id": file_id,
-        "doc_type": doc_type,
-        "file_info": file_info,
-        "download_links": links,
-    }
+async def read_pdf_upload(file: UploadFile) -> bytes:
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(400, "Chỉ hỗ trợ file PDF.")
+    content = await file.read(MAX_PDF_BYTES + 1)
+    if len(content) > MAX_PDF_BYTES:
+        raise HTTPException(413, "Tổng dung lượng PDF mỗi lần tối đa 4 MB.")
+    if not content:
+        raise HTTPException(400, "File PDF không được rỗng.")
+    try:
+        with pymupdf.open(stream=content, filetype="pdf") as document:
+            if not document.page_count:
+                raise ValueError("empty")
+    except Exception:
+        raise HTTPException(400, f"File '{file.filename}' không phải PDF hợp lệ.")
+    return content
 
 
-@app.post("/api/drive/export-link")
-async def get_export_link(
-    url: str = Form(...),
-    format: str = Form("pdf"),
+@app.post("/api/pdf-tools/merge")
+async def merge_pdfs(files: list[UploadFile] = File(...)):
+    if len(files) < 2:
+        raise HTTPException(400, "Hãy chọn ít nhất 2 file PDF để gộp.")
+    if len(files) > 30:
+        raise HTTPException(400, "Chỉ có thể gộp tối đa 30 file mỗi lần.")
+    merged = pymupdf.open()
+    try:
+        total_bytes = 0
+        for file in files:
+            content = await read_pdf_upload(file)
+            total_bytes += len(content)
+            if total_bytes > MAX_PDF_BYTES:
+                raise HTTPException(413, "Tổng dung lượng các file PDF để gộp tối đa 4 MB.")
+            with pymupdf.open(stream=content, filetype="pdf") as source:
+                merged.insert_pdf(source)
+        return pdf_response(merged.tobytes(garbage=4, deflate=True), "pdf", merged.page_count)
+    finally:
+        merged.close()
+
+
+@app.post("/api/pdf-tools/info")
+async def pdf_tool_info(file: UploadFile = File(...)):
+    """Read the total pages as soon as a PDF is selected."""
+    content = await read_pdf_upload(file)
+    with pymupdf.open(stream=content, filetype="pdf") as source:
+        return {"pages": source.page_count}
+
+
+@app.post("/api/pdf-tools/split")
+async def split_pdf(
+    file: UploadFile = File(...),
+    start_page: int | None = Form(None),
+    end_page: int | None = Form(None),
 ):
-    """Generate an export link for Google Docs/Sheets/Slides."""
-    file_id = extract_file_id(url)
-    if not file_id:
-        raise HTTPException(400, "Link không hợp lệ")
+    content = await read_pdf_upload(file)
+    # Khi người dùng nhập khoảng trang, tạo một PDF duy nhất từ khoảng đó.
+    # Không nhập khoảng vẫn giữ hành vi cũ: tách từng trang thành ZIP.
+    if start_page is not None or end_page is not None:
+        with pymupdf.open(stream=content, filetype="pdf") as source:
+            total_pages = source.page_count
+            start = 1 if start_page is None else start_page
+            end = total_pages if end_page is None else end_page
+            if start < 1 or end < 1 or start > end or end > total_pages:
+                raise HTTPException(400, f"Khoảng trang không hợp lệ. File có {total_pages} trang; hãy nhập từ 1 đến {total_pages}.")
+            result = pymupdf.open()
+            try:
+                result.insert_pdf(source, from_page=start - 1, to_page=end - 1)
+                return pdf_response(result.tobytes(garbage=4, deflate=True), "pdf", result.page_count)
+            finally:
+                result.close()
+    output = BytesIO()
+    with pymupdf.open(stream=content, filetype="pdf") as source, zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
+        pages = source.page_count
+        for page_number in range(source.page_count):
+            page_document = pymupdf.open()
+            try:
+                page_document.insert_pdf(source, from_page=page_number, to_page=page_number)
+                archive.writestr(f"page-{page_number + 1}.pdf", page_document.tobytes(garbage=4, deflate=True))
+                check_output_size(output.tell())
+            finally:
+                page_document.close()
+    return pdf_response(output.getvalue(), "zip", pages)
 
-    doc_type = detect_doc_type(url)
-    export_url = generate_export_link(file_id, doc_type, format)
 
-    return {
-        "file_id": file_id,
-        "doc_type": doc_type,
-        "format": format,
-        "export_url": export_url,
-    }
-
-
-@app.get("/api/drive/proxy-download/{file_id}")
-async def proxy_download(file_id: str, method: str = Query("direct_v1")):
-    """
-    Proxy download a file from Google Drive through our server.
-    Helps bypass CORS and some download restrictions.
-    """
+@app.post("/api/pdf-tools/split-ranges")
+async def split_pdf_ranges(file: UploadFile = File(...), ranges: str = Form(...)):
+    content = await read_pdf_upload(file)
     try:
-        file_bytes, filename, content_type = download_file_proxy(file_id, method)
-        encoded_filename = urllib.parse.quote(filename.encode('utf-8'))
-        clean_ascii = unicodedata.normalize('NFKD', filename).encode('ascii', 'ignore').decode('ascii')
-        safe_ascii_name = "".join(c for c in clean_ascii if c.isalnum() or c in "._- ") or "file.bin"
+        requested = json.loads(ranges)
+        if not isinstance(requested, list) or not requested or len(requested) > 1000:
+            raise ValueError()
+    except (json.JSONDecodeError, ValueError, TypeError):
+        raise HTTPException(400, "Danh sách khoảng trang không hợp lệ.")
 
-        return Response(
-            content=file_bytes,
-            media_type=content_type,
-            headers={
-                "Content-Disposition": f"attachment; filename=\"{safe_ascii_name}\"; filename*=UTF-8''{encoded_filename}",
-                "Content-Length": str(len(file_bytes)),
-            }
-        )
-    except Exception as e:
-        raise HTTPException(500, f"Tải thất bại: {str(e)}")
+    with pymupdf.open(stream=content, filetype="pdf") as source:
+        total_pages = source.page_count
+        normalized = []
+        for item in requested:
+            if not isinstance(item, dict):
+                raise HTTPException(400, "Mỗi khoảng trang phải có trang bắt đầu và kết thúc.")
+            start, end = item.get("start"), item.get("end", total_pages)
+            if type(start) is not int or type(end) is not int or start < 1 or end < start or end > total_pages:
+                raise HTTPException(400, f"Khoảng trang không hợp lệ. File có {total_pages} trang.")
+            normalized.append((start, end))
+
+        total_output_pages = sum(end - start + 1 for start, end in normalized)
+        if len(normalized) == 1:
+            result = pymupdf.open()
+            try:
+                start, end = normalized[0]
+                result.insert_pdf(source, from_page=start - 1, to_page=end - 1)
+                return pdf_response(result.tobytes(garbage=4, deflate=True), "pdf", total_output_pages)
+            finally:
+                result.close()
+
+        output = BytesIO()
+        with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
+            for index, (start, end) in enumerate(normalized, 1):
+                result = pymupdf.open()
+                try:
+                    result.insert_pdf(source, from_page=start - 1, to_page=end - 1)
+                    archive.writestr(f"part-{index}_pages-{start}-{end}.pdf", result.tobytes(garbage=4, deflate=True))
+                    check_output_size(output.tell())
+                finally:
+                    result.close()
+        return pdf_response(output.getvalue(), "zip", total_output_pages, len(normalized))
+
+
+@app.post("/api/pdf-tools/png")
+async def pdf_to_png(file: UploadFile = File(...), dpi: int = Form(180)):
+    if dpi < 72 or dpi > 300:
+        raise HTTPException(400, "DPI phải nằm trong khoảng 72–300.")
+    content = await read_pdf_upload(file)
+    output = BytesIO()
+    with pymupdf.open(stream=content, filetype="pdf") as source, zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
+        pages = source.page_count
+        for page_number, page in enumerate(source):
+            pixmap = page.get_pixmap(matrix=pymupdf.Matrix(dpi / 72, dpi / 72), alpha=False)
+            archive.writestr(f"page-{page_number + 1}.png", pixmap.tobytes("png"))
+            check_output_size(output.tell())
+    return pdf_response(output.getvalue(), "zip", pages)
 
 
 if __name__ == "__main__":

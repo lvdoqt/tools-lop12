@@ -6,14 +6,16 @@ export default function Navbar() {
       <Link to="/" className="navbar-brand">
         <div className="navbar-logo">T</div>
         <div>
-          <div className="navbar-title">Tools All</div>
-          <div className="navbar-subtitle">Bộ công cụ đa năng</div>
+          <div className="navbar-title">Công cụ cho Toán</div>
+          <div className="navbar-subtitle">Soạn bài · Vẽ hình · Xử lý tài liệu</div>
         </div>
       </Link>
       <ul className="navbar-nav">
         <li><NavLink to="/" end>🏠 Trang chủ</NavLink></li>
-        <li><NavLink to="/pdf-to-word">📄 PDF → Word</NavLink></li>
-        <li><NavLink to="/drive-downloader">☁️ Drive Download</NavLink></li>
+        <li><NavLink to="/json-formatter">{`{ } JSON`}</NavLink></li>
+        <li><NavLink to="/tikz-editor">TikZ</NavLink></li>
+        <li><NavLink to="/tex-to-pdf">TeX → PDF</NavLink></li>
+        <li><NavLink to="/pdf-tools">Công cụ PDF</NavLink></li>
       </ul>
     </nav>
   );

@@ -1,173 +1,79 @@
-const API_BASE = 'http://localhost:8000/api';
+const API_BASE = (import.meta.env?.VITE_API_BASE_URL || '/api').replace(/\/$/, '');
+export const MAX_PDF_BYTES = 4 * 1024 * 1024;
+
+export function validatePdfFiles(files) {
+  if (files.length > 30) throw new Error('Chỉ có thể chọn tối đa 30 file mỗi lần.');
+  if (files.some(file => !file.name.toLowerCase().endsWith('.pdf') || !file.size)) {
+    throw new Error('Hãy chọn file PDF không rỗng.');
+  }
+  if (files.reduce((total, file) => total + file.size, 0) > MAX_PDF_BYTES) {
+    throw new Error('Tổng dung lượng PDF mỗi lần tối đa 4 MB.');
+  }
+}
+
+async function checkResponse(res, fallback) {
+  if (res.ok) return;
+  const error = await res.json().catch(() => ({}));
+  const detail = typeof error.detail === 'string' ? error.detail : null;
+  throw new Error(detail || (res.status === 413 ? 'Dữ liệu vượt quá giới hạn dung lượng. Hãy giảm kích thước file hoặc DPI.' : fallback));
+}
+
+export function releaseResult(result) {
+  new Set(result?.objectUrls || []).forEach(url => URL.revokeObjectURL(url));
+}
 
 export const api = {
-  // ===== PDF Endpoints =====
-  uploadPdf: async (file) => {
+  // ===== TikZ Endpoints =====
+  renderTikz: async (source, dpi = 180) => {
+    const res = await fetch(`${API_BASE}/tikz/render`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source, dpi }),
+    });
+    await checkResponse(res, 'Không thể biên dịch mã TikZ.');
+    const data = await res.json();
+    const downloads = {};
+    const objectUrls = [];
+    try {
+      for (const [format, type] of Object.entries({ png: 'image/png', pdf: 'application/pdf', tex: 'application/x-tex' })) {
+        const bytes = Uint8Array.from(atob(data.assets[format]), char => char.charCodeAt(0));
+        downloads[format] = URL.createObjectURL(new Blob([bytes], { type }));
+        objectUrls.push(downloads[format]);
+      }
+    } catch (error) {
+      releaseResult({ objectUrls });
+      throw error;
+    }
+    return { output_id: data.output_id, preview_url: downloads.png, pdf_preview_url: downloads.pdf, downloads, objectUrls };
+  },
+
+  pdfTool: async (operation, files, dpi = 180, pageRanges = null) => {
+    validatePdfFiles(files);
+    const formData = new FormData();
+    if (operation === 'merge') files.forEach(file => formData.append('files', file));
+    else formData.append('file', files[0]);
+    if (operation === 'png') formData.append('dpi', String(dpi));
+    if (operation === 'split' && pageRanges) formData.append('ranges', JSON.stringify(pageRanges));
+    const endpoint = operation === 'split' && pageRanges ? 'split-ranges' : operation;
+    const res = await fetch(`${API_BASE}/pdf-tools/${endpoint}`, { method: 'POST', body: formData });
+    await checkResponse(res, 'Không thể xử lý PDF.');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    return {
+      pages: Number(res.headers.get('X-PDF-Pages')),
+      files: Number(res.headers.get('X-PDF-Files')),
+      filename: blob.type === 'application/pdf' ? 'pdf-output.pdf' : 'pdf-output.zip',
+      download_url: url,
+      objectUrls: [url],
+    };
+  },
+  getPdfToolInfo: async (file) => {
+    validatePdfFiles([file]);
     const formData = new FormData();
     formData.append('file', file);
-    const res = await fetch(`${API_BASE}/pdf/upload`, {
-      method: 'POST',
-      body: formData,
-    });
-    if (!res.ok) {
-      let msg = 'Upload thất bại';
-      try {
-        const err = await res.json();
-        msg = err.detail || msg;
-      } catch (e) {}
-      throw new Error(msg);
-    }
+    const res = await fetch(`${API_BASE}/pdf-tools/info`, { method: 'POST', body: formData });
+    await checkResponse(res, 'Không thể đọc số trang PDF.');
     return res.json();
-  },
-
-  getPreviewUrl: (fileId, page = 0, dpi = 150) => {
-    return `${API_BASE}/pdf/preview/${fileId}?page=${page}&dpi=${dpi}`;
-  },
-
-  convertPdf: async (fileId, mode = 'math_hd', dpi = 250, pageRange = 'all') => {
-    const formData = new FormData();
-    formData.append('file_id', fileId);
-    formData.append('mode', mode);
-    formData.append('dpi', dpi.toString());
-    formData.append('page_range', pageRange);
-    
-    const res = await fetch(`${API_BASE}/pdf/convert`, {
-      method: 'POST',
-      body: formData,
-    });
-    if (!res.ok) {
-      let msg = 'Chuyển đổi thất bại';
-      try {
-        const err = await res.json();
-        msg = err.detail || msg;
-      } catch (e) {}
-      throw new Error(msg);
-    }
-    return res.json();
-  },
-
-  getWordContent: async (outputId) => {
-    const res = await fetch(`${API_BASE}/pdf/content/${outputId}`);
-    if (!res.ok) {
-      let msg = 'Không thể tải nội dung tài liệu';
-      try {
-        const err = await res.json();
-        msg = err.detail || msg;
-      } catch (e) {}
-      throw new Error(msg);
-    }
-    return res.json();
-  },
-
-  saveWordContent: async (outputId, text) => {
-    const res = await fetch(`${API_BASE}/pdf/save/${outputId}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ text }),
-    });
-    if (!res.ok) {
-      let msg = 'Lưu file Word thất bại';
-      try {
-        const err = await res.json();
-        msg = err.detail || msg;
-      } catch (e) {}
-      throw new Error(msg);
-    }
-    return res.json();
-  },
-
-  getDownloadUrl: (outputId, filename = 'document.docx') => {
-    return `${API_BASE}/pdf/download/${outputId}?filename=${encodeURIComponent(filename)}`;
-  },
-
-  downloadWordBlob: async (outputId, filename = 'document.docx') => {
-    const url = `${API_BASE}/pdf/download/${outputId}?filename=${encodeURIComponent(filename)}`;
-    try {
-      const res = await fetch(url);
-      if (!res.ok) {
-        let msg = 'Tải file thất bại';
-        try {
-          const err = await res.json();
-          msg = err.detail || msg;
-        } catch (e) {}
-        throw new Error(msg);
-      }
-      const blob = await res.blob();
-      const blobUrl = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = blobUrl;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(blobUrl);
-      return true;
-    } catch (e) {
-      // Direct link fallback
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      return true;
-    }
-  },
-
-  downloadTextBlob: (text, filename = 'document.txt') => {
-    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-    const blobUrl = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = blobUrl;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(blobUrl);
-  },
-
-  // ===== Drive Endpoints =====
-  parseDriveUrl: async (url) => {
-    const formData = new FormData();
-    formData.append('url', url);
-    const res = await fetch(`${API_BASE}/drive/parse`, {
-      method: 'POST',
-      body: formData,
-    });
-    if (!res.ok) {
-      let msg = 'Link không hợp lệ';
-      try {
-        const err = await res.json();
-        msg = err.detail || msg;
-      } catch (e) {}
-      throw new Error(msg);
-    }
-    return res.json();
-  },
-
-  getExportLink: async (url, format = 'pdf') => {
-    const formData = new FormData();
-    formData.append('url', url);
-    formData.append('format', format);
-    const res = await fetch(`${API_BASE}/drive/export-link`, {
-      method: 'POST',
-      body: formData,
-    });
-    if (!res.ok) {
-      let msg = 'Lỗi tạo link';
-      try {
-        const err = await res.json();
-        msg = err.detail || msg;
-      } catch (e) {}
-      throw new Error(msg);
-    }
-    return res.json();
-  },
-
-  getProxyDownloadUrl: (fileId, method = 'direct_v1') => {
-    return `${API_BASE}/drive/proxy-download/${fileId}?method=${method}`;
   },
 
   // ===== Health =====

@@ -3,59 +3,42 @@ import { Link } from 'react-router-dom';
 
 const ALL_TOOLS = [
   {
-    id: 'pdf-word', path: '/pdf-to-word', category: 'convert',
-    icon: '📄', iconClass: 'red',
-    title: 'PDF → Word',
-    desc: 'Chuyển đổi file PDF sang Word (.docx) bằng Python. Hỗ trợ đề toán 12, công thức, bảng biểu với độ chính xác cao.',
-    tags: [{ text: '🔥 Hot', cls: 'hot' }, { text: 'PDF' }, { text: 'DOCX' }],
-    active: true,
-  },
-  {
-    id: 'drive-dl', path: '/drive-downloader', category: 'download',
-    icon: '☁️', iconClass: 'blue',
-    title: 'Drive Downloader',
-    desc: 'Tải file PDF/Word từ Google Drive bị hạn chế "chỉ xem". Bypass giới hạn tải về qua server proxy.',
-    tags: [{ text: '🔥 Hot', cls: 'hot' }, { text: 'Google Drive' }, { text: 'Download' }],
-    active: true,
-  },
-  {
-    id: 'word-pdf', category: 'convert',
-    icon: '📝', iconClass: 'purple',
-    title: 'Word → PDF',
-    desc: 'Chuyển đổi file Word (.docx) sang PDF chất lượng cao, giữ nguyên định dạng.',
-    tags: [{ text: '🔜 Sắp ra mắt', cls: 'new' }, { text: 'DOCX' }, { text: 'PDF' }],
-    active: false,
-  },
-  {
-    id: 'tex-pdf', category: 'convert',
+    id: 'tex-pdf', path: '/tex-to-pdf', category: 'convert',
     icon: '🧮', iconClass: 'green',
     title: 'TeX → PDF',
     desc: 'Biên dịch file LaTeX (.tex) sang PDF. Hỗ trợ công thức toán phức tạp.',
-    tags: [{ text: '🔜 Sắp ra mắt', cls: 'new' }, { text: 'LaTeX' }, { text: 'PDF' }],
-    active: false,
+    tags: [{ text: 'Mới', cls: 'new' }, { text: 'LaTeX' }, { text: 'PDF' }],
+    active: true,
   },
   {
-    id: 'json-fmt', category: 'format',
+    id: 'tikz-editor', path: '/tikz-editor', category: 'edit',
+    icon: '△', iconClass: 'purple',
+    title: 'TikZ Editor',
+    desc: 'Dán mã LaTeX TikZ, biên dịch thành hình, xem trước và tải về dưới dạng PNG, PDF hoặc TEX.',
+    tags: [{ text: 'Mới', cls: 'new' }, { text: 'TikZ' }, { text: 'LaTeX' }],
+    active: true,
+  },
+  {
+    id: 'json-fmt', path: '/json-formatter', category: 'format',
     icon: '{ }', iconClass: 'cyan',
     title: 'JSON Formatter',
     desc: 'Định dạng, validate và chuyển đổi JSON. Hỗ trợ minify, beautify và tree view.',
-    tags: [{ text: '🔜 Sắp ra mắt', cls: 'new' }, { text: 'JSON' }, { text: 'Format' }],
-    active: false,
+    tags: [{ text: 'Mới', cls: 'new' }, { text: 'JSON' }, { text: 'Format' }],
+    active: true,
   },
   {
-    id: 'merge-pdf', category: 'edit',
+    id: 'pdf-tools', path: '/pdf-tools', category: 'edit',
     icon: '📑', iconClass: 'orange',
-    title: 'Merge PDF',
-    desc: 'Gộp nhiều file PDF thành một. Sắp xếp thứ tự dễ dàng.',
-    tags: [{ text: '🔜 Sắp ra mắt', cls: 'new' }, { text: 'PDF' }, { text: 'Merge' }],
-    active: false,
+    title: 'Công cụ PDF',
+    desc: 'Gộp, chia PDF thành nhiều file nhỏ hoặc chuyển từng trang sang PNG.',
+    tags: [{ text: 'Mới', cls: 'new' }, { text: 'PDF' }, { text: 'PNG' }],
+    active: true,
   },
 ];
 
 const CATEGORIES = [
   { id: 'all', label: '🔥 Tất cả' },
   { id: 'convert', label: '🔄 Chuyển đổi' },
-  { id: 'download', label: '⬇️ Tải xuống' },
   { id: 'edit', label: '✏️ Chỉnh sửa' },
   { id: 'format', label: '📐 Định dạng' },
 ];
@@ -82,15 +65,14 @@ export default function HomePage() {
       <section className="hero">
         <div className="hero-badge">
           <span className="dot"></span>
-          Phiên bản 1.0 — React + Python
+          Hỗ trợ dạy và học Toán
         </div>
         <h1>
-          Mọi công cụ bạn cần<br />
-          <span className="gradient-text">trong một nơi duy nhất</span>
+          Công cụ <span className="gradient-text">cho Toán</span>
         </h1>
         <p>
-          Xử lý file PDF, Word, TeX, JSON, tải file từ Google Drive và nhiều hơn nữa.
-          Sức mạnh Python + giao diện React hiện đại.
+          Biên dịch LaTeX, vẽ hình TikZ, xử lý tài liệu PDF và định dạng dữ liệu JSON.
+          Các tiện ích giúp bạn chuẩn bị bài giảng, đề thi và tài liệu học tập.
         </p>
       </section>
 
@@ -112,10 +94,10 @@ export default function HomePage() {
 
       {/* Stats */}
       <div className="stats-bar">
-        <div className="stat-item"><div className="stat-number">6+</div><div className="stat-label">Công cụ</div></div>
+        <div className="stat-item"><div className="stat-number">{ALL_TOOLS.length}</div><div className="stat-label">Công cụ</div></div>
         <div className="stat-item"><div className="stat-number">100%</div><div className="stat-label">Miễn phí</div></div>
-        <div className="stat-item"><div className="stat-number">🐍</div><div className="stat-label">Python Backend</div></div>
-        <div className="stat-item"><div className="stat-number">⚛️</div><div className="stat-label">React Frontend</div></div>
+        <div className="stat-item"><div className="stat-number">TeX</div><div className="stat-label">Soạn tài liệu Toán</div></div>
+        <div className="stat-item"><div className="stat-number">TikZ</div><div className="stat-label">Vẽ hình Toán học</div></div>
       </div>
 
       {/* Category Tabs */}
@@ -180,7 +162,7 @@ export default function HomePage() {
 
       {/* Footer */}
       <footer className="footer">
-        <p>© 2026 <strong>Tools All</strong> — React + Python FastAPI. Made with ❤️</p>
+        <p>© 2026 <strong>Công cụ cho Toán</strong> — Hỗ trợ dạy và học Toán.</p>
       </footer>
     </main>
   );

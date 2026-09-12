@@ -1,0 +1,37 @@
+{
+  "title": "Toán 12",
+  "questions": [
+    {
+      "type": "mcq",
+      "question": "Cho hàm số $y = x^3 - 3x^2 + 2$. Hàm số đã cho đồng biến trên khoảng nào dưới đây?",
+      "option_a": "$(2; +\\infty)$",
+      "option_b": "$(0; 2)$",
+      "option_c": "$(-\\infty; 2)$",
+      "option_d": "$(0; +\\infty)$",
+      "correct_option": "A",
+      "explanation": "Ta có $y' = 3x^2 - 6x = 3x(x - 2)$.\nCho $y' = 0 \\Leftrightarrow x = 0$ hoặc $x = 2$.\nBảng xét dấu $y'$:\n- $y' > 0$ trên $(-\\infty; 0)$ và $(2; +\\infty)$\n- $y' < 0$ trên $(0; 2)$\nDo đó hàm số đồng biến trên các khoảng $(-\\infty; 0)$ và $(2; +\\infty)$.",
+      "difficulty_level": "easy",
+      "is_dynamic": false
+    },
+    {
+      "type": "msq",
+      "question": "Cho hàm số $y = f(x) = x^3 - 3x + 2$. Xét tính đúng sai của các khẳng định sau:",
+      "option_a": "Đạo hàm của hàm số là $f'(x) = 3x^2 - 3$",
+      "option_b": "Hàm số đồng biến trên các khoảng $(-\\infty; -1)$ và $(1; +\\infty)$",
+      "option_c": "Hàm số nghịch biến trên khoảng $(-1; 1)$",
+      "option_d": "Hàm số đồng biến trên toàn bộ tập số thực $\\mathbb{R}$",
+      "correct_option": "A,B,C",
+      "explanation": "A đúng: $f'(x) = 3x^2 - 3$.\nB, C đúng: $f'(x) = 0 \\Leftrightarrow x = \\pm 1$. Trong khoảng $(-1; 1)$ đạo hàm âm nên nghịch biến; ngoài khoảng đạo hàm dương nên đồng biến.\nD sai: Hàm số có khoảng nghịch biến.",
+      "difficulty_level": "easy",
+      "is_dynamic": false
+    },
+    {
+      "type": "sa",
+      "question": "Tìm độ dài của khoảng nghịch biến của hàm số $y = \\frac{x^3}{3} - 2x^2 + 3x + 1$.",
+      "correct_option": "2",
+      "explanation": "Ta có $y' = x^2 - 4x + 3 = (x - 1)(x - 3)$.\n$y' < 0 \\Leftrightarrow 1 < x < 3$. Khoảng nghịch biến là $(1; 3)$, độ dài bằng $3 - 1 = 2$.",
+      "difficulty_level": "easy",
+      "is_dynamic": false
+    }
+  ]
+}
