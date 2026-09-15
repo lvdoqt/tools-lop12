@@ -7,3 +7,5 @@ dist/
 .env
 .env.*
 !.env.example
+.artifacts/
+frontend/public/tikzjax-assets/

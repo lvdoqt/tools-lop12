@@ -3,6 +3,13 @@ import { Link } from 'react-router-dom';
 
 const ALL_TOOLS = [
   {
+    id: 'latex-json', path: '/latex-to-json', category: 'convert',
+    icon: '{ }', iconClass: 'cyan', title: 'Latex to Json',
+    desc: 'Chuyển đề thi .tex sang JSON Quiz Bank. Tạo SVG từ TikZ và gắn link hình Cloudinary.',
+    tags: [{ text: 'Mới', cls: 'new' }, { text: 'Quiz Bank' }, { text: 'LaTeX' }],
+    active: true,
+  },
+  {
     id: 'tex-pdf', path: '/tex-to-pdf', category: 'convert',
     icon: '🧮', iconClass: 'green',
     title: 'TeX → PDF',

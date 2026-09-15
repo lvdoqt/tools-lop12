@@ -8,6 +8,7 @@ Bộ tiện ích hỗ trợ chuẩn bị bài giảng, đề thi và tài liệu
 - `/tikz-editor`: vẽ hình TikZ, xem trước và tải PNG, PDF hoặc TEX.
 - `/json-formatter`: định dạng, nén và kiểm tra JSON trên trình duyệt.
 - `/pdf-tools`: gộp PDF, chia theo khoảng trang và xuất ảnh PNG.
+- `/latex-to-json`: đọc đề thi `.tex`, chuyển câu hỏi sang schema Quiz Bank, tạo SVG và gắn link Cloudinary bằng HTML `<img>`.
 
 ## Kiến trúc
 
@@ -28,6 +29,8 @@ TikZ và TeX cần backend cùng kết nối Internet đến LaTeX.Online. Công
 `requirements.txt` ở thư mục gốc khai báo trực tiếp các thư viện để bước phân tích dependency của Vercel không phải đọc file dẫn bằng `-r`. Khi cập nhật thư viện, giữ danh sách này đồng bộ với `backend/requirements.txt` dùng để chạy local.
 
 Frontend và API dùng chung domain: `/api/*` chuyển đến Python function; các trang giao diện chuyển đến `index.html`. API mặc định dùng đường dẫn tương đối `/api`, không cần biến môi trường hay khóa dịch vụ. Nếu từng đặt `VITE_API_BASE_URL` trỏ đến localhost, hãy xóa biến đó trước khi deploy.
+
+Riêng chức năng upload hình của LaTeX → JSON cần cấu hình Cloudinary như hướng dẫn bên dưới.
 
 Giới hạn:
 
@@ -66,6 +69,57 @@ npm run dev
 - API Docs: http://localhost:8000/api/docs
 
 Vite dev server chuyển `/api` đến `http://127.0.0.1:8000`, nên code frontend dùng cùng đường dẫn khi chạy local và trên Vercel.
+
+## LaTeX → JSON Quiz Bank
+
+1. Mở `/latex-to-json`, chọn file `.tex` UTF-8 (tối đa 1 MB) hoặc dán mã đề.
+2. Nhập tên bộ câu hỏi, chọn độ khó mặc định và bấm **Đọc đề và kiểm tra**.
+3. Kiểm tra số câu, đáp án và hình. Bấm **Tạo SVG và tải hình lên** nếu đề có hình.
+4. Khi tất cả hình đã có link, tải `quiz-bank.json` hoặc sao chép JSON để import.
+
+Hỗ trợ môi trường `ex`, `\choice` → `mcq`, `\choiceTF`/`\choiceTFt` → `msq`, `\shortans` → `sa`, `\True`, `\loigiai`, `\immini` (kể cả lựa chọn nằm trong đối số đầu), tùy chọn `[4]`/`[oly]`, comment và dấu ngoặc lồng nhau. Câu đúng/sai lưu các phương án đúng như `A,B,C`; trả lời ngắn bỏ dấu `$`, chuẩn hóa `26{,}9` thành `26,9`. Độ khó do người dùng chọn; chương trình giữ nguyên đáp án đã đánh dấu, không tự giải toán hoặc sửa đáp án.
+
+Công thức LaTeX được giữ nguyên. Bảng `tabular` đơn giản chuyển thành HTML `<table>`. Hình được thay bằng `<img src="https://...svg" alt="..." />` trong chính trường `question`, `option_a`… hoặc `explanation` chứa hình. Quiz Bank cần hỗ trợ HTML và công thức LaTeX. Ảnh `\includegraphics`, file `\input`, bảng gộp ô và cấu trúc chưa hỗ trợ sẽ báo lỗi; không âm thầm bỏ câu hoặc hình. Macro riêng ngoài hình vẫn cần được trình hiển thị toán của Quiz Bank hỗ trợ.
+
+### Cloudinary
+
+Sao chép `.env.example` thành `.env` ở gốc repository, rồi điền:
+
+```dotenv
+CLOUDINARY_CLOUD_NAME=your-cloud
+CLOUDINARY_API_KEY=your-api-key
+CLOUDINARY_API_SECRET=your-api-secret
+CLOUDINARY_FOLDER=TDupsave
+```
+
+Backend đọc `.env` khi khởi động; khởi động lại sau khi đổi cấu hình. Khi deploy Vercel, thêm bốn biến trên vào **Environment Variables** của project. Không dùng tiền tố `VITE_` cho API secret. `.env` bị loại khỏi Git và Vercel upload. Frontend chỉ nhận trạng thái kết nối, cloud name và folder. Chữ ký SHA-256 và upload thực hiện trên backend; mỗi SVG dùng public ID theo hash nội dung, `overwrite=false` để thử lại mà không ghi đè hình khác.
+
+Nếu backend chưa có tài khoản Cloudinary, trang cho nhập cloud name và **unsigned upload preset** (preset cần cho phép SVG), rồi upload trực tiếp từ trình duyệt. Các giá trị này chỉ giữ trong trang hiện tại; có thể đặt mặc định bằng `VITE_CLOUDINARY_CLOUD_NAME` và `VITE_CLOUDINARY_UPLOAD_PRESET`.
+
+### Tạo SVG và xử lý lỗi
+
+- Dùng API JavaScript của [TikZJax qua isomorphic-tikzjax](https://github.com/prinsss/isomorphic-tikzjax) trong Web Worker, xử lý tuần tự để giao diện không bị treo. Đây là thư viện chạy trong trình duyệt, không phụ thuộc một REST endpoint TikZJax công cộng.
+- Tài nguyên TeX/WASM và font ghim phiên bản `0.1.1`, được bước `predev`/`prebuild` sao chép từ npm package để phục vụ cùng ứng dụng. Font được nhúng vào SVG để hình hiển thị độc lập qua `<img>`.
+- `tkz-tab`, nhãn tiếng Việt hoặc hình TikZJax không biên dịch được dùng LaTeX.Online → PDF → SVG (chữ thành đường vector). Trang ghi rõ bộ biên dịch của mỗi hình.
+- Mỗi lần gọi backend chỉ xử lý một hình: biên dịch bổ sung tối đa 45 giây, upload tối đa 35 giây, phù hợp function 60 giây. SVG upload tối đa 2 MB.
+- Có thể hủy, kiểm tra lỗi từng hình và thử lại. SVG và link thành công được giữ trong trang, tránh upload lại; xuất JSON bị khóa khi còn hình chưa có link. Chỉnh sửa đề hoặc rời trang sẽ xóa kết quả đang giữ trên trình duyệt.
+
+Tham khảo: [Cloudinary Upload API](https://cloudinary.com/documentation/image_upload_api_reference), [chữ ký xác thực](https://cloudinary.com/documentation/authentication_signatures).
+
+### Kiểm tra
+
+```powershell
+python -m unittest discover -s tests -p 'test_*.py'
+node --test tests/frontend-api.test.mjs tests/quiz-conversion.test.mjs
+```
+
+Kiểm tra trình duyệt tùy chọn (cần `pip install playwright`, Chrome và hai server đang chạy):
+
+```powershell
+python tests/browser_latex_smoke.py
+# Thực sự upload hình của T.Do.tex lên Cloudinary:
+python tests/browser_latex_smoke.py --upload
+```
 
 ## Kiểm tra frontend
 

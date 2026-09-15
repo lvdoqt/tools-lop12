@@ -5,3 +5,7 @@
 frontend/dist
 tests
 quiz-bank.json
+T.Do.tex
+.env
+.env.*
+.artifacts

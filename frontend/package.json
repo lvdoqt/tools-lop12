@@ -4,12 +4,17 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/sync-tikzjax-assets.mjs",
+    "prebuild": "node scripts/sync-tikzjax-assets.mjs",
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@prinsss/dvi2html": "^0.0.1",
+    "buffer": "^6.0.3",
+    "isomorphic-tikzjax": "^0.1.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.2"

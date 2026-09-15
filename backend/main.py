@@ -21,8 +21,14 @@ import pymupdf
 
 if __package__:
     from .services.tikz_renderer import render_tikz
+    from .services.latex_quiz import parse_quiz
+    from .services.quiz_svg import render_compat_svg
+    from .services.cloudinary_upload import cloudinary_config, upload_svg
 else:
     from services.tikz_renderer import render_tikz
+    from services.latex_quiz import parse_quiz
+    from services.quiz_svg import render_compat_svg
+    from services.cloudinary_upload import cloudinary_config, upload_svg
 
 MAX_PDF_BYTES = 4 * 1024 * 1024
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -106,6 +112,57 @@ async def tikz_render(request: TikzRenderRequest):
         logger.exception("TikZ render failed")
         raise HTTPException(502, str(exc))
 
+
+# ===================================================
+#   LATEX TO QUIZ JSON ENDPOINTS
+# ===================================================
+
+class LatexQuizRequest(BaseModel):
+    source: str = Field(min_length=1, max_length=1_000_000)
+    title: str = Field(default="Toán 12", max_length=200)
+    difficulty: str = Field(default="easy", pattern="^(easy|medium|hard)$")
+
+
+@app.get("/api/latex-to-json/config")
+async def latex_quiz_config():
+    return JSONResponse(cloudinary_config(), headers={"Cache-Control": "no-store"})
+
+
+class SvgUploadRequest(BaseModel):
+    svg: str = Field(min_length=1, max_length=2_000_000)
+
+
+@app.post("/api/latex-to-json/upload-svg")
+async def latex_quiz_upload(request: SvgUploadRequest):
+    try:
+        return JSONResponse(await run_in_threadpool(upload_svg, request.svg), headers={"Cache-Control": "no-store"})
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(502, str(exc))
+
+
+@app.post("/api/latex-to-json/parse")
+async def latex_quiz_parse(request: LatexQuizRequest):
+    try:
+        result = await run_in_threadpool(parse_quiz, request.source, request.title, request.difficulty)
+        response = JSONResponse(result, headers={"Cache-Control": "no-store"})
+        check_output_size(len(response.body))
+        return response
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.post("/api/latex-to-json/compat-svg")
+async def latex_quiz_compat_svg(request: TikzRenderRequest):
+    try:
+        svg = await run_in_threadpool(render_compat_svg, request.source)
+        check_output_size(len(svg.encode("utf-8")))
+        return Response(svg, media_type="image/svg+xml", headers={"Cache-Control": "no-store"})
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(502, str(exc))
 
 # ===================================================
 #   PDF TOOLS ENDPOINTS

@@ -6,6 +6,7 @@ import JsonFormatterPage from './pages/JsonFormatterPage';
 import TikzEditorPage from './pages/TikzEditorPage';
 import TexToPdfPage from './pages/TexToPdfPage';
 import PdfToolsPage from './pages/PdfToolsPage';
+import LatexToJsonPage from './pages/LatexToJsonPage';
 
 export default function App() {
   return (
@@ -18,6 +19,7 @@ export default function App() {
         <Route path="/tikz-editor" element={<TikzEditorPage />} />
         <Route path="/tex-to-pdf" element={<TexToPdfPage />} />
         <Route path="/pdf-tools" element={<PdfToolsPage />} />
+        <Route path="/latex-to-json" element={<LatexToJsonPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
