@@ -3,6 +3,13 @@ import { Link } from 'react-router-dom';
 
 const ALL_TOOLS = [
   {
+    id: 'edit-html', path: '/edit-html', category: 'edit',
+    icon: '</>', iconClass: 'orange', title: 'Edit HTML',
+    desc: 'Mở hoặc dán HTML, sửa mã và văn bản trực quan. Đầy đủ công cụ định dạng, bảng, ảnh và công thức LaTeX với bản xem trước trực tiếp.',
+    tags: [{ text: 'Mới', cls: 'new' }, { text: 'HTML' }, { text: 'LaTeX' }],
+    active: true,
+  },
+  {
     id: 'latex-json', path: '/latex-to-json', category: 'convert',
     icon: '{ }', iconClass: 'cyan', title: 'Latex to Json',
     desc: 'Chuyển đề thi .tex sang JSON Quiz Bank. Tạo SVG từ TikZ và gắn link hình Cloudinary.',

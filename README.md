@@ -4,11 +4,18 @@ Bộ tiện ích hỗ trợ chuẩn bị bài giảng, đề thi và tài liệu
 
 ## Công cụ
 
+- `/edit-html`: mở/dán HTML, sửa mã hoặc văn bản trực quan bên trái, xem trước HTML/CSS và LaTeX bên phải; tải mã HTML về máy.
 - `/tex-to-pdf`: biên dịch mã LaTeX hoặc JSON chứa mã TeX thành PDF.
 - `/tikz-editor`: vẽ hình TikZ, xem trước và tải PNG, PDF hoặc TEX.
 - `/json-formatter`: định dạng, nén và kiểm tra JSON trên trình duyệt.
 - `/pdf-tools`: gộp PDF, chia theo khoảng trang và xuất ảnh PNG.
 - `/latex-to-json`: đọc đề thi `.tex`, chuyển câu hỏi sang schema Quiz Bank, tạo SVG và gắn link Cloudinary bằng HTML `<img>`.
+
+## Edit HTML
+
+Mở `/edit-html`, chọn **Mở HTML** (tệp `.html`/`.htm` UTF-8, tối đa 2 MB), kéo thả vào vùng mã hoặc dán mã trực tiếp. Chế độ **Văn bản** cho phép sửa nội dung và định dạng bằng thanh công cụ: tiêu đề, phông/cỡ/màu chữ, đậm/nghiêng/gạch chân/gạch ngang, chỉ số, căn lề, danh sách, thụt lề, trích dẫn, liên kết, ảnh qua URL, bảng, đường kẻ, mã và LaTeX. Có hoàn tác/làm lại, sao chép, đổi tên tệp, tải HTML và xem trước điện thoại.
+
+Công thức hỗ trợ `$…$`, `$$…$$`, `\(…\)`, `\[…\]`, hiển thị bằng KaTeX đóng gói cùng frontend. Công thức trong vùng Văn bản giữ mã LaTeX để chỉnh trực tiếp. **Tải HTML** xuất mã nguồn, giữ nguyên LaTeX; nếu mở tệp độc lập cần trình hiển thị toán của trang đó. Xem trước và soạn văn bản lọc HTML bằng DOMPurify, cô lập trong iframe và không chạy JavaScript. Ảnh/CSS bên ngoài cần URL đầy đủ và kết nối mạng; không tải thư mục tài nguyên đi kèm tệp. Chế độ Văn bản chuẩn hóa phần thân HTML khi sửa; dùng Mã HTML nếu cần giữ cấu trúc nguồn nguyên vẹn. Nội dung chỉ giữ trong phiên trang đang mở; tải tệp trước khi rời trang.
 
 ## Kiến trúc
 
@@ -79,7 +86,7 @@ Vite dev server chuyển `/api` đến `http://127.0.0.1:8000`, nên code fronte
 
 Hỗ trợ môi trường `ex`, `\choice` → `mcq`, `\choiceTF`/`\choiceTFt` → `msq`, `\shortans` → `sa`, `\True`, `\loigiai`, `\immini` (kể cả lựa chọn nằm trong đối số đầu), tùy chọn `[4]`/`[oly]`, comment và dấu ngoặc lồng nhau. Câu đúng/sai lưu các phương án đúng như `A,B,C`; trả lời ngắn bỏ dấu `$`, chuẩn hóa `26{,}9` thành `26,9`. Độ khó do người dùng chọn; chương trình giữ nguyên đáp án đã đánh dấu, không tự giải toán hoặc sửa đáp án.
 
-Công thức LaTeX được giữ nguyên. Bảng `tabular` đơn giản chuyển thành HTML `<table>`. Hình được thay bằng `<img src="https://...svg" alt="..." />` trong chính trường `question`, `option_a`… hoặc `explanation` chứa hình. Quiz Bank cần hỗ trợ HTML và công thức LaTeX. Ảnh `\includegraphics`, file `\input`, bảng gộp ô và cấu trúc chưa hỗ trợ sẽ báo lỗi; không âm thầm bỏ câu hoặc hình. Macro riêng ngoài hình vẫn cần được trình hiển thị toán của Quiz Bank hỗ trợ.
+Công thức LaTeX được giữ nguyên, riêng `\hoac{…}` và `\heva{…}` được thay bằng `\left[\begin{aligned}…\end{aligned}\right.` và `\left\{\begin{aligned}…\end{aligned}\right.` để hiển thị mà không cần khai báo macro. Hỗ trợ đối số lồng nhau trong câu hỏi, phương án, lời giải và ô bảng. Bảng `tabular` đơn giản chuyển thành HTML `<table border="1">`, có `border-collapse: collapse` và viền đen 1px trên bảng cùng từng ô để kẻ đầy đủ khung. Hình được thay bằng `<img src="https://...svg" alt="..." />` trong chính trường `question`, `option_a`… hoặc `explanation` chứa hình. Quiz Bank cần hỗ trợ HTML và công thức LaTeX. Ảnh `\includegraphics`, file `\input`, bảng gộp ô và cấu trúc chưa hỗ trợ sẽ báo lỗi; không âm thầm bỏ câu hoặc hình. Các macro riêng khác ngoài hình vẫn cần được trình hiển thị toán của Quiz Bank hỗ trợ.
 
 ### Cloudinary
 
@@ -122,6 +129,8 @@ python tests/browser_latex_smoke.py --upload
 ```
 
 ## Kiểm tra frontend
+
+Kiểm tra Edit HTML trên Chrome (cần Playwright và frontend đang chạy): `python tests/browser_html_editor.py`. Bao gồm upload, định dạng, đồng bộ văn bản/mã, LaTeX, sao chép/tải HTML, cô lập script và bố cục điện thoại.
 
 ```powershell
 cd D:\tools\frontend

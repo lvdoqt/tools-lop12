@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Background from './components/Background';
@@ -7,6 +8,8 @@ import TikzEditorPage from './pages/TikzEditorPage';
 import TexToPdfPage from './pages/TexToPdfPage';
 import PdfToolsPage from './pages/PdfToolsPage';
 import LatexToJsonPage from './pages/LatexToJsonPage';
+
+const HtmlEditorPage = lazy(() => import('./pages/HtmlEditorPage'));
 
 export default function App() {
   return (
@@ -20,6 +23,7 @@ export default function App() {
         <Route path="/tex-to-pdf" element={<TexToPdfPage />} />
         <Route path="/pdf-tools" element={<PdfToolsPage />} />
         <Route path="/latex-to-json" element={<LatexToJsonPage />} />
+        <Route path="/edit-html" element={<Suspense fallback={<main className="main-content"><div className="tool-page">Đang mở trình soạn thảo…</div></main>}><HtmlEditorPage /></Suspense>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

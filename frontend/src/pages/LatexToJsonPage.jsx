@@ -151,6 +151,7 @@ export default function LatexToJsonPage() {
     <div className="tool-header"><div className="tool-header-icon json-header-icon">{'{ }'}</div>
       <h1>Latex <span className="gradient-text">to Json</span></h1>
       <p>Chuyển đề thi Toán từ file .tex thành JSON để import vào Quiz Bank.</p>
+      <p className="latex-note">Tự động thay {'\\hoac, \\heva'} bằng công thức ngoặc vuông/ngoặc nhọn; bảng số liệu chuyển sang HTML có đầy đủ đường viền.</p>
     </div>
     <div className="glass-panel">
       <div className="json-toolbar"><div className="json-actions">

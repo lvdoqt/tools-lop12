@@ -16,6 +16,7 @@ export default function Navbar() {
         <li><NavLink to="/tikz-editor">TikZ</NavLink></li>
         <li><NavLink to="/tex-to-pdf">TeX → PDF</NavLink></li>
         <li><NavLink to="/latex-to-json">LaTeX → JSON</NavLink></li>
+        <li><NavLink to="/edit-html">Edit HTML</NavLink></li>
         <li><NavLink to="/pdf-tools">Công cụ PDF</NavLink></li>
       </ul>
     </nav>

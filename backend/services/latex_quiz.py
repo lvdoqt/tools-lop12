@@ -4,6 +4,9 @@ import re
 from html import escape
 
 
+MATH_PATTERN = re.compile(r"(?s)\$\$.*?\$\$|(?<!\\)\$(?:\\.|[^$])*?\$|\\\[.*?\\\]|\\\(.*?\\\)")
+
+
 def strip_comments(source):
     return re.sub(r"(?<!\\)((?:\\\\)*)%[^\n]*", r"\1", source)
 
@@ -50,13 +53,34 @@ def flatten_immini(source):
     return source
 
 
+def expand_system_macros(source, depth=0):
+    """Expand the two ex_test shortcuts without requiring a renderer preamble."""
+    if depth > 64:
+        raise ValueError("Công thức hoac/heva lồng nhau quá sâu.")
+    parts, pos = [], 0
+    # Tokenize control sequences so an escaped backslash is not a macro call.
+    commands = re.compile(r"\\(?:[a-zA-Z]+|.)", re.DOTALL)
+    while match := commands.search(source, pos):
+        parts.append(source[pos:match.start()])
+        if match.group() in (r"\hoac", r"\heva"):
+            body, pos = group(source, match.end())
+            delimiter = "[" if match.group() == r"\hoac" else r"\{"
+            parts.append(r"\left" + delimiter + r"\begin{aligned}" + expand_system_macros(body, depth + 1) + r"\end{aligned}\right.")
+        else:
+            parts.append(match.group())
+            pos = match.end()
+    parts.append(source[pos:])
+    return "".join(parts)
+
+
 def clean_text(source):
+    source = expand_system_macros(source)
     # Preserve all math, including nested braces and line breaks in aligned/cases.
     math = []
     def protect(match):
         math.append(match.group())
         return f"\x00M{len(math) - 1}\x00"
-    source = re.sub(r"(?s)\$\$.*?\$\$|(?<!\\)\$(?:\\.|[^$])*?\$|\\\[.*?\\\]|\\\(.*?\\\)", protect, source)
+    source = MATH_PATTERN.sub(protect, source)
     source = re.sub(r"\\(?:begin|end)\{(?:center|flushleft|flushright|itemchoice|itemize|enumerate)\}(?:\[[^\]]*\])?", "\n", source)
     source = re.sub(r"\\item(?:ch)?\b(?:\[[^\]]*\])?", "\n- ", source)
     source = re.sub(r"\\(?:par|noindent|smallskip|medskip|bigskip)\b", "\n", source)
@@ -68,21 +92,62 @@ def clean_text(source):
     return re.sub(r"\x00M(\d+)\x00", lambda m: math[int(m[1])], source)
 
 
+def table_rows(body):
+    """Split only top-level table separators, preserving math and TeX groups."""
+    rows, cells, start, pos, depth, environments = [], [], 0, 0, 0, 0
+    while pos < len(body):
+        math = MATH_PATTERN.match(body, pos)
+        if math:
+            pos = math.end()
+            continue
+        environment = re.match(r"\\(begin|end)\{[^{}]+\}", body[pos:]) if body[pos] == "\\" else None
+        if environment:
+            environments += 1 if environment[1] == "begin" else -1
+            pos += environment.end()
+            continue
+        if depth == 0 and environments == 0:
+            if body.startswith("\\\\", pos):
+                cells.append(body[start:pos])
+                if any(cell.strip() for cell in cells):
+                    rows.append(cells)
+                cells = []
+                pos += 2
+                if pos < len(body) and body[pos] == "*":
+                    pos += 1
+                pos = optional(body, pos)  # Optional row spacing, e.g. \\[2pt].
+                start = pos
+                continue
+            if body[pos] == "&":
+                cells.append(body[start:pos])
+                pos += 1
+                start = pos
+                continue
+        if body[pos] == "\\":
+            pos += 2
+            continue
+        if body[pos] == "{":
+            depth += 1
+        elif body[pos] == "}":
+            depth -= 1
+        pos += 1
+    cells.append(body[start:])
+    if any(cell.strip() for cell in cells):
+        rows.append(cells)
+    return rows
+
+
 def table_html(source):
     match = re.match(r"\\begin\{tabular\}(?:\[[^\]]*\])?", source)
     _, pos = group(source, match.end())
     body = source[pos:source.rfind(r"\end{tabular}")]
     body = re.sub(r"\\(?:hline|toprule|midrule|bottomrule)\b", "", body)
-    rows = []
-    for row in re.split(r"\\\\", body):
-        if row.strip():
-            cells = re.split(r"(?<!\\)&", row)
-            rows.append([escape(clean_text(cell)) for cell in cells])
+    rows = [[escape(clean_text(cell)) for cell in row] for row in table_rows(body)]
     if not rows or any(len(row) != len(rows[0]) for row in rows):
         raise ValueError("Bảng tabular có số cột không đều hoặc cấu trúc chưa hỗ trợ.")
     if re.search(r"\\(?:multicolumn|multirow|cline)\b", body):
         raise ValueError("Bảng gộp ô chưa được hỗ trợ. Hãy đổi thành bảng đơn giản.")
-    return "\n\n<table>" + "".join("<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>" for row in rows) + "</table>\n\n"
+    table = '<table border="1" style="border-collapse: collapse; border: 1px solid #000;">'
+    return "\n\n" + table + "".join("<tr>" + "".join(f'<td style="border: 1px solid #000; padding: 6px 10px;">{cell}</td>' for cell in row) + "</tr>" for row in rows) + "</table>\n\n"
 
 
 def parse_quiz(source, title="Toán 12", difficulty="easy"):
@@ -133,7 +198,7 @@ def parse_quiz(source, title="Toán 12", difficulty="easy"):
             pos = optional(block, match.end())
             if question["type"] == "sa":
                 answer, pos = group(block, pos)
-                answer = answer.strip().strip("$").replace("{,}", ",").strip()
+                answer = expand_system_macros(answer.strip().strip("$").replace("{,}", ",").strip())
                 if not answer:
                     raise ValueError("Đáp án trả lời ngắn đang trống.")
                 question["correct_option"] = answer

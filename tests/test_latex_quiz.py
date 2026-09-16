@@ -3,11 +3,12 @@ import unittest
 from unittest.mock import patch
 from unittest.mock import Mock
 from io import BytesIO
+from html import unescape
 import tarfile
 
 from fastapi.testclient import TestClient
 from backend.main import app
-from backend.services.latex_quiz import parse_quiz
+from backend.services.latex_quiz import expand_system_macros, parse_quiz
 from backend.services.quiz_svg import render_compat_svg
 import pymupdf
 
@@ -25,7 +26,7 @@ class LatexQuizTests(unittest.TestCase):
         question = parse_quiz(MCQ)['quiz']['questions'][0]
         self.assertEqual(question['correct_option'], 'B')
         self.assertEqual(question['option_c'], r'$\frac{1}{x}$')
-        self.assertEqual(question['option_d'], r'$\heva{&x=1\\&y=2}$')
+        self.assertEqual(question['option_d'], r'$\left\{\begin{aligned}&x=1\\&y=2\end{aligned}\right.$')
         self.assertIn('Tiếng Việt', question['question'])
         self.assertNotIn('ignore', question['question'])
         self.assertFalse(question['is_dynamic'])
@@ -55,9 +56,57 @@ class LatexQuizTests(unittest.TestCase):
     def test_tables_become_html_and_escaped_percent_survives(self):
         source = r'\begin{ex}Tỉ lệ 10\%.\begin{tabular}{|c|c|}\hline Điểm & $[0;2)$\\\hline Số & $3$\\\hline\end{tabular}\shortans{3}\end{ex}'
         result = parse_quiz(source)
-        self.assertIn('<table><tr><td>Điểm</td>', result['quiz']['questions'][0]['question'])
+        table = result['quiz']['questions'][0]['question']
+        self.assertIn('<table border="1" style="border-collapse: collapse; border: 1px solid #000;">', table)
+        self.assertEqual(table.count('<td style="border: 1px solid #000; padding: 6px 10px;">'), 4)
+        self.assertIn('>Điểm</td>', table)
         self.assertIn(r'10\%', result['quiz']['questions'][0]['question'])
         self.assertEqual(len(result['warnings']), 1)
+
+    def test_system_macros_expand_in_question_options_and_solution(self):
+        source = r'''\newcommand{\hoac}[1]{\left[\begin{aligned}#1\end{aligned}\right.}
+        \newcommand{\heva}[1]{\left\{\begin{aligned}#1\end{aligned}\right.}
+        \begin{ex}Giải $\hoac{&x=\frac{1}{2}\\&x=-1}$.
+        \choice{\True $\heva{&x=1\\&y=2}$}{$2$}{$3$}{$4$}
+        \loigiai{Ta có \[\heva{&x=1\\&\hoac{&y=2\\&y=3}}\].}
+        \end{ex}'''
+        q = parse_quiz(source)['quiz']['questions'][0]
+        self.assertIn(r'$\left[\begin{aligned}&x=\frac{1}{2}\\&x=-1\end{aligned}\right.$', q['question'])
+        self.assertEqual(q['option_a'], r'$\left\{\begin{aligned}&x=1\\&y=2\end{aligned}\right.$')
+        self.assertIn(r'\[\left\{\begin{aligned}&x=1\\&\left[\begin{aligned}&y=2\\&y=3\end{aligned}\right.\end{aligned}\right.\]', q['explanation'])
+        self.assertNotIn(r'\newcommand', str(q))
+        self.assertNotIn(r'\hoac', str(q))
+        self.assertNotIn(r'\heva', str(q))
+
+    def test_system_macro_names_escapes_and_missing_arguments(self):
+        self.assertEqual(expand_system_macros(r'\hoacother{a} \\heva{b}'), r'\hoacother{a} \\heva{b}')
+        self.assertEqual(expand_system_macros('\\heva \n {x^{2}=1}'), r'\left\{\begin{aligned}x^{2}=1\end{aligned}\right.')
+        with self.assertRaisesRegex(ValueError, 'Câu 1:'):
+            parse_quiz(r'\begin{ex}$\heva$\shortans{1}\end{ex}')
+
+    def test_table_math_separators_do_not_create_extra_cells_or_rows(self):
+        source = r'''\begin{ex}Bảng:
+        \begin{tabular}{|c|c|}\hline
+        Điều kiện & Giá trị\\[2pt]\hline
+        $\heva{&x=\frac{1}{2}\\&y<2}$ & $\hoac{&a=1\\&a=2}$\\\hline
+        Nhãn \& chữ & <script>alert(1)</script>\\\hline
+        \end{tabular}\shortans{1}\end{ex}'''
+        table = parse_quiz(source)['quiz']['questions'][0]['question']
+        self.assertEqual(table.count('<tr>'), 3)
+        self.assertEqual(table.count('<td '), 6)
+        self.assertEqual(table.count('border: 1px solid #000;'), 7)
+        self.assertNotIn('[2pt]', table)
+        self.assertNotIn('<script>', table)
+        self.assertIn('&lt;script&gt;', table)
+        self.assertIn(r'$\left\{\begin{aligned}&x=\frac{1}{2}\\&y<2\end{aligned}\right.$', unescape(table))
+        self.assertIn(r'$\left[\begin{aligned}&a=1\\&a=2\end{aligned}\right.$', unescape(table))
+
+    def test_tables_in_options_and_explanations_have_borders(self):
+        table = r'\begin{tabular}{cc}A&B\\1&2\end{tabular}'
+        source = r'\begin{ex}Chọn bảng\choice{\True ' + table + r'}{B}{C}{D}\loigiai{' + table + r'}\end{ex}'
+        q = parse_quiz(source)['quiz']['questions'][0]
+        for field in ['option_a', 'explanation']:
+            self.assertEqual(q[field].count('border: 1px solid #000;'), 5)
 
     def test_invalid_input_never_silently_drops_questions(self):
         for source in ['', MCQ.replace(r'\True', ''), MCQ.replace(r'{$x$}', r'{\True $x$}'), MCQ.replace(r'\end{ex}', ''), MCQ.replace(r'\loigiai{', r'\loigiai{{'), MCQ + r'\begin{ex}Không có đáp án\end{ex}']:
@@ -74,6 +123,7 @@ class LatexQuizTests(unittest.TestCase):
         client = TestClient(app)
         response = client.post('/api/latex-to-json/parse', json={'source': MCQ})
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['quiz']['questions'][0]['option_d'], r'$\left\{\begin{aligned}&x=1\\&y=2\end{aligned}\right.$')
         self.assertEqual(response.headers['cache-control'], 'no-store')
         self.assertEqual(client.post('/api/latex-to-json/parse', json={'source': 'broken'}).status_code, 400)
         self.assertEqual(client.post('/api/latex-to-json/parse', json={'source': MCQ, 'difficulty': 'invalid'}).status_code, 422)
