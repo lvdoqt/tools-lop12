@@ -29,7 +29,7 @@ test('PDF response becomes a usable browser download with metadata', async t => 
 });
 
 test('TikZ previews and downloads preserve binary and UTF-8 content', async t => {
-  const content = { png: Buffer.from([137, 80, 78, 71]), pdf: Buffer.from('%PDF-test'), tex: Buffer.from('Tiếng Việt') };
+  const content = { png: Buffer.from([137, 80, 78, 71]), pdf: Buffer.from('%PDF-test'), tex: Buffer.from('Tiếng Việt'), svg: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><text>Tiếng Việt</text></svg>') };
   t.mock.method(globalThis, 'fetch', async url => {
     assert.equal(url, '/api/tikz/render');
     return Response.json({ output_id: 'test', assets: Object.fromEntries(Object.entries(content).map(([key, value]) => [key, value.toString('base64')])) });

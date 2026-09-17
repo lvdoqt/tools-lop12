@@ -35,7 +35,8 @@ export const api = {
     const downloads = {};
     const objectUrls = [];
     try {
-      for (const [format, type] of Object.entries({ png: 'image/png', pdf: 'application/pdf', tex: 'application/x-tex' })) {
+      for (const [format, type] of Object.entries({ png: 'image/png', pdf: 'application/pdf', tex: 'application/x-tex', svg: 'image/svg+xml' })) {
+        if (!data.assets[format]) continue;
         const bytes = Uint8Array.from(atob(data.assets[format]), char => char.charCodeAt(0));
         downloads[format] = URL.createObjectURL(new Blob([bytes], { type }));
         objectUrls.push(downloads[format]);

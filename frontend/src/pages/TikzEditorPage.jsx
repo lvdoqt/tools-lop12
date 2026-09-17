@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { useFileResult } from '../useFileResult';
 import { ToastContainer, useToast } from '../components/Toast';
+
+import TikzLibrary from '../components/TikzLibrary';
 
 const TEMPLATES = [
   {
@@ -47,7 +49,12 @@ const TEMPLATES = [
 const SAMPLE = TEMPLATES[0].source;
 
 export default function TikzEditorPage() {
-  const [source, setSource] = useState(() => localStorage.getItem('tools-all-tikz-draft') || SAMPLE);
+  const [source, setSource] = useState(() => { try { return localStorage.getItem('tools-all-tikz-draft') || SAMPLE; } catch { return SAMPLE; } });
+  const [compiled, setCompiled] = useState(null);
+  useEffect(() => {
+    const timer = setTimeout(() => { try { localStorage.setItem('tools-all-tikz-draft', source); } catch { /* Manual save reports storage errors. */ } }, 500);
+    return () => clearTimeout(timer);
+  }, [source]);
   const [dpi, setDpi] = useState(180);
   const [result, setResult] = useFileResult();
   const [loading, setLoading] = useState(false);
@@ -57,8 +64,11 @@ export default function TikzEditorPage() {
     if (!source.trim()) return addToast('⚠️ Hãy nhập mã TikZ.', 'warning');
     setLoading(true);
     try {
-      const data = await api.renderTikz(source, dpi);
+      const snapshot = { source, dpi };
+      const data = await api.renderTikz(snapshot.source, snapshot.dpi);
+      const svg = data.downloads.svg ? await (await fetch(data.downloads.svg)).text() : null;
       setResult(data);
+      setCompiled({ ...snapshot, svg, id: data.output_id });
       addToast('✅ Đã vẽ hình TikZ', 'success');
     } catch (error) {
       setResult(null);
@@ -73,7 +83,8 @@ export default function TikzEditorPage() {
     setResult(null);
   };
   const saveDraft = () => {
-    localStorage.setItem('tools-all-tikz-draft', source);
+    try { localStorage.setItem('tools-all-tikz-draft', source); }
+    catch { return addToast('Không lưu được bản nháp trên trình duyệt.', 'error'); }
     addToast('💾 Đã lưu bản nháp trên trình duyệt', 'success');
   };
 
@@ -100,11 +111,11 @@ export default function TikzEditorPage() {
             <div className="tikz-panel-heading">
               <div><strong>Mã LaTeX / TikZ</strong><span>{source.length.toLocaleString()} / 20.000 ký tự</span></div>
               <div className="tikz-heading-actions">
-                <button className="tool-btn" onClick={() => setSource(SAMPLE)}>Mẫu</button>
+                <button className="tool-btn" onClick={() => loadTemplate(TEMPLATES[0])}>Mẫu</button>
                 <button className="tool-btn" onClick={saveDraft}>💾 Lưu mã</button>
               </div>
             </div>
-            <textarea className="tikz-textarea" value={source} onChange={e => setSource(e.target.value)} spellCheck="false" />
+            <textarea className="tikz-textarea" value={source} onChange={e => { setSource(e.target.value); setResult(null); }} spellCheck="false" />
             <div className="tikz-compile-bar">
               <label>DPI
                 <select value={dpi} onChange={e => setDpi(Number(e.target.value))}>
@@ -115,7 +126,7 @@ export default function TikzEditorPage() {
                 {loading ? <><span className="spinner" /> Đang biên dịch...</> : '▶ Vẽ hình'}
               </button>
             </div>
-            <div className="alert alert-info tikz-privacy"><span>ℹ️</span><span>Mã được gửi đến dịch vụ LaTeX.Online để biên dịch. Kết quả được giữ trên trình duyệt; hãy tải file trước khi rời trang. Nếu kết quả quá lớn, hãy giảm DPI hoặc rút gọn tài liệu.</span></div>
+            <div className="alert alert-info tikz-privacy"><span>ℹ️</span><span>Mã được gửi đến LaTeX.Online để biên dịch. Mở thư viện bên dưới để tự lưu ảnh lên Cloudinary và mã TikZ lên Supabase. Nếu chưa mở thư viện, hãy tải file trước khi rời trang.</span></div>
           </section>
 
           <section className="glass-panel tikz-preview-panel">
@@ -124,12 +135,19 @@ export default function TikzEditorPage() {
               {result ? <img src={result.preview_url} alt="Kết quả TikZ" /> : <div className="tikz-empty"><span>△</span><p>Nhấn “Vẽ hình” để xem kết quả</p></div>}
             </div>
             {result && <div className="tikz-downloads">
+              {result.downloads.svg && <a className="btn btn-secondary" href={result.downloads.svg} download="tikz-diagram.svg" target="_blank" rel="noreferrer">Tải SVG</a>}
               <a className="btn btn-secondary" href={result.downloads.tex} download="tikz-diagram.tex">Tải TEX</a>
-              <a className="btn btn-secondary" href={result.downloads.pdf} download="tikz-diagram.pdf">Tải PDF</a>
+              {result.downloads.pdf && <a className="btn btn-secondary" href={result.downloads.pdf} download="tikz-diagram.pdf">Tải PDF</a>}
               <a className="btn btn-success" href={result.downloads.png} download="tikz-diagram.png">⬇ Tải PNG</a>
             </div>}
           </section>
         </div>
+        <TikzLibrary compiled={compiled} addToast={addToast} onOpen={drawing => {
+          setSource(drawing.source); setDpi(drawing.dpi); setCompiled(null);
+          const tex = URL.createObjectURL(new Blob([drawing.source], { type: 'application/x-tex;charset=utf-8' }));
+          setResult({ preview_url: drawing.svg_url, downloads: { svg: drawing.svg_url, png: drawing.png_url, tex }, objectUrls: [tex] });
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }} />
       </div>
       <ToastContainer toasts={toasts} />
     </main>

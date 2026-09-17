@@ -1019,3 +1019,18 @@ body {
 .latex-image-error { color: var(--accent-red); overflow-wrap: anywhere; }
 .latex-results > .json-textarea { width: 100%; min-height: 360px; }
 @media (max-width: 640px) { .latex-settings { grid-template-columns: 1fr; } }
+
+.tikz-library { margin-top: 1.5rem; }
+.tikz-library > p { color: var(--text-secondary); margin: .75rem 0; }
+.tikz-library-toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: .65rem; margin: 1rem 0; }
+.tikz-library label { display: grid; gap: .4rem; flex: 1; min-width: 180px; }
+.tikz-library input { width: 100%; min-width: 0; padding: .6rem; border: 1px solid var(--border-glass); border-radius: 8px; font: inherit; }
+.tikz-library-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(min(100%,300px),1fr)); gap: 1rem; }
+.tikz-library-card { min-width: 0; border: 1px solid var(--border-glass); border-radius: 12px; padding: 1rem; background: #fff; }
+.tikz-library-card > img { width: 100%; height: 180px; object-fit: contain; margin-bottom: .75rem; }
+.tikz-library-card > strong, .tikz-library-card > small { display: block; overflow-wrap: anywhere; }
+.tikz-library-links > div { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin-top: .75rem; }
+.tikz-library-links input { font-size: .72rem; }
+.tikz-library-detail { margin-top: 1rem; }
+.tikz-library-detail textarea { height: 240px; margin-top: .75rem; }
+.tikz-downloads { flex-wrap: wrap; }

@@ -19,7 +19,7 @@ def cloudinary_config():
     return {'signed_upload': configured, 'cloud_name': cloud, 'folder': os.getenv('CLOUDINARY_FOLDER', '').strip()}
 
 
-def upload_svg(svg):
+def upload_svg(svg, prefix='quiz'):
     config = cloudinary_config()
     if not config['signed_upload']:
         raise RuntimeError('Backend chưa cấu hình Cloudinary.')
@@ -41,7 +41,7 @@ def upload_svg(svg):
     content = svg.encode('utf-8')
     params = {
         'timestamp': str(int(time.time())),
-        'public_id': 'quiz-' + hashlib.sha256(content).hexdigest()[:32],
+        'public_id': prefix + '-' + hashlib.sha256(content).hexdigest()[:32],
         'overwrite': 'false',
     }
     if config['folder']:
@@ -61,4 +61,4 @@ def upload_svg(svg):
     url = result.get('secure_url', '')
     if not isinstance(url, str) or not url.startswith('https://'):
         raise RuntimeError('Cloudinary chưa trả về link HTTPS.')
-    return {'url': url}
+    return {'url': url, 'public_id': result.get('public_id', '/'.join(filter(None, [config['folder'], params['public_id']])))}

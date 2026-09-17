@@ -66,6 +66,12 @@ app = FastAPI(
 )
 
 # CORS — allow all local origins
+if __package__:
+    from .services.tikz_library import router as tikz_library_router
+else:
+    from services.tikz_library import router as tikz_library_router
+app.include_router(tikz_library_router)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -100,7 +106,7 @@ async def tikz_render(request: TikzRenderRequest):
             output_dir = Path(directory)
             result = await run_in_threadpool(render_tikz, request.source, output_dir, output_id, request.dpi)
             assets = {}
-            for file_format in ("png", "pdf", "tex"):
+            for file_format in ("png", "pdf", "tex", "svg"):
                 path = output_dir / f"{output_id}.{file_format}"
                 check_output_size(path.stat().st_size)
                 assets[file_format] = base64.b64encode(path.read_bytes()).decode("ascii")

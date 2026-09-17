@@ -166,3 +166,7 @@ node --test tests/frontend-api.test.mjs
 ```
 
 Các bài kiểm tra backend bao gồm nội dung PDF/ZIP, giới hạn upload tổng 4 MB, giới hạn response, cô lập file giữa các request và dọn thư mục tạm. Kiểm tra TikZ tự động giả lập dịch vụ biên dịch bên ngoài.
+
+## Thư viện TikZ: Cloudinary + Supabase
+
+Trang `/tikz-editor` có thư viện lưu ảnh SVG/PNG và mã TikZ gốc, tìm kiếm, mở lại, sao chép link/mã và tải file. Chạy [SQL tạo bảng](supabase/tikz_library.sql), thêm cấu hình trong `.env.example`, rồi làm theo [hướng dẫn thiết lập](supabase/README.md). Mở thư viện bằng `TIKZ_LIBRARY_KEY` để tự lưu các hình vẽ thành công. Khóa Supabase chỉ dùng ở backend.

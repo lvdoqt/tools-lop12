@@ -102,7 +102,7 @@ class ApiTests(unittest.TestCase):
 
         def renderer(source, directory, output_id, dpi):
             directories.append(directory)
-            for ext, content in {"pdf": self.pdf, "png": b"png-preview", "tex": source.encode()}.items():
+            for ext, content in {"pdf": self.pdf, "png": b"png-preview", "tex": source.encode(), "svg": b'<svg xmlns="http://www.w3.org/2000/svg"/>'}.items():
                 (directory / f"{output_id}.{ext}").write_bytes(content)
             return {"output_id": output_id, "source": source}
 
@@ -122,7 +122,7 @@ class ApiTests(unittest.TestCase):
 
         def renderer(source, directory, output_id, dpi):
             directories.append(directory)
-            for ext in ("pdf", "png", "tex"):
+            for ext in ("pdf", "png", "tex", "svg"):
                 (directory / f"{output_id}.{ext}").write_bytes(b"x" * 270)
             return {"output_id": output_id}
 

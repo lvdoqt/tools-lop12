@@ -75,6 +75,7 @@ def render_tikz(source: str, output_dir: Path, output_id: str, dpi: int = 180) -
         if not pdf.page_count:
             raise ValueError("Kết quả biên dịch không có trang nào.")
         page = pdf[0]
+        (output_dir / f"{output_id}.svg").write_text(page.get_svg_image(text_as_path=True), encoding="utf-8")
         pixmap = page.get_pixmap(matrix=pymupdf.Matrix(dpi / 72, dpi / 72), alpha=True)
         pixmap.save(png_path)
 
