@@ -136,12 +136,23 @@ def table_rows(body):
     return rows
 
 
+def clean_table_cell(source):
+    source = source.strip()
+    # Outer TeX groups delimit the cell content; they are not visible braces.
+    while source.startswith("{"):
+        content, end = group(source, 0)
+        if end != len(source):
+            break
+        source = content.strip()
+    return clean_text(source)
+
+
 def table_html(source):
     match = re.match(r"\\begin\{tabular\}(?:\[[^\]]*\])?", source)
     _, pos = group(source, match.end())
     body = source[pos:source.rfind(r"\end{tabular}")]
     body = re.sub(r"\\(?:hline|toprule|midrule|bottomrule)\b", "", body)
-    rows = [[escape(clean_text(cell)) for cell in row] for row in table_rows(body)]
+    rows = [[escape(clean_table_cell(cell)) for cell in row] for row in table_rows(body)]
     if not rows or any(len(row) != len(rows[0]) for row in rows):
         raise ValueError("Bảng tabular có số cột không đều hoặc cấu trúc chưa hỗ trợ.")
     if re.search(r"\\(?:multicolumn|multirow|cline)\b", body):

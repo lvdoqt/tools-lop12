@@ -24,11 +24,15 @@ if __package__:
     from .services.latex_quiz import parse_quiz
     from .services.quiz_svg import render_compat_svg
     from .services.cloudinary_upload import cloudinary_config, upload_svg
+    from .services.quiz_word import validate_quiz, export_quiz
+    from .services.word_shuffle import Exam, export_shuffle, MAX_UPLOAD
 else:
     from services.tikz_renderer import render_tikz
     from services.latex_quiz import parse_quiz
     from services.quiz_svg import render_compat_svg
     from services.cloudinary_upload import cloudinary_config, upload_svg
+    from services.quiz_word import validate_quiz, export_quiz
+    from services.word_shuffle import Exam, export_shuffle, MAX_UPLOAD
 
 MAX_PDF_BYTES = 4 * 1024 * 1024
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -163,6 +167,103 @@ async def latex_quiz_compat_svg(request: TikzRenderRequest):
         raise HTTPException(400, str(exc))
     except RuntimeError as exc:
         raise HTTPException(502, str(exc))
+
+class WordSettings(BaseModel):
+    organization: str = Field(default='TRƯỜNG THPT', max_length=120)
+    exam_title: str = Field(default='KỲ THI TỐT NGHIỆP THPT', min_length=1, max_length=160)
+    code: str = Field(default='101', min_length=1, max_length=20, pattern=r'^[\w-]+$')
+    minutes: int = Field(default=90, ge=1, le=300)
+    include_answers: bool = True
+
+
+class WordCheckRequest(BaseModel):
+    source: str = Field(min_length=1, max_length=2_097_152)
+    settings: WordSettings = Field(default_factory=WordSettings)
+
+
+class FormulaPreview(BaseModel):
+    svg: str = Field(min_length=1, max_length=300_000)
+    width: float = Field(gt=0, le=3000, allow_inf_nan=False)
+    height: float = Field(gt=0, le=1000, allow_inf_nan=False)
+    baseline: float = Field(default=0, ge=0, le=1000, allow_inf_nan=False)
+
+
+class WordExportRequest(WordCheckRequest):
+    previews: dict[str, FormulaPreview] = Field(default_factory=dict, max_length=1500)
+
+
+@app.post('/api/json-to-word/validate')
+async def word_validate(request: WordCheckRequest):
+    try:
+        result = await run_in_threadpool(validate_quiz, request.source, request.settings.include_answers)
+        return JSONResponse(result['summary'], headers={'Cache-Control': 'no-store'})
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.post('/api/json-to-word/export')
+async def word_export(request: WordExportRequest):
+    try:
+        if sum(len(p.svg.encode()) for p in request.previews.values()) + len(request.source.encode()) > 4 * 1024 * 1024:
+            raise HTTPException(413, 'Dữ liệu xuất vượt quá 4 MB. Hãy giảm số câu mỗi lần xuất.')
+        content = await run_in_threadpool(export_quiz, request.source, request.settings.model_dump(), {key: value.model_dump() for key, value in request.previews.items()})
+        return Response(content, media_type='application/zip', headers={
+            'Content-Disposition': 'attachment; filename="De-Toan-Word.zip"', 'Cache-Control': 'no-store',
+        })
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except Exception:
+        logger.exception('Word export failed')
+        raise HTTPException(500, 'Không tạo được Word. Hãy kiểm tra dữ liệu và thử lại.')
+
+
+# ===================================================
+#   WORD SHUFFLE ENDPOINTS
+# ===================================================
+
+async def read_shuffle_upload(file: UploadFile):
+    if not file.filename or not file.filename.lower().endswith('.docx'):
+        raise HTTPException(400, 'Chỉ hỗ trợ .docx. Hãy lưu file .doc thành .docx bằng Word.')
+    content = await file.read(MAX_UPLOAD + 1)
+    if not content:
+        raise HTTPException(400, 'File Word không được rỗng.')
+    if len(content) > MAX_UPLOAD:
+        raise HTTPException(413, 'File Word tối đa 4 MB.')
+    return content
+
+
+@app.post('/api/word-shuffle/analyze')
+async def word_shuffle_analyze(file: UploadFile = File(...)):
+    content = await read_shuffle_upload(file)
+    try:
+        result = await run_in_threadpool(lambda: Exam(content).summary())
+        response = JSONResponse(result, headers={'Cache-Control': 'no-store'})
+        check_output_size(len(response.body))
+        return response
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.post('/api/word-shuffle/export')
+async def word_shuffle_export(file: UploadFile = File(...), count: int = Form(4, ge=1, le=50),
+                              start_code: str = Form('0101', pattern=r'^\d{3,4}$'),
+                              include_solutions: bool = Form(True),
+                              seed: str | None = Form(None, max_length=80),
+                              variant_index: int | None = Form(None, ge=0, le=49),
+                              department: str = Form('SỞ GDĐT ................................', min_length=1, max_length=120),
+                              school: str = Form('TRƯỜNG THPT ........................', min_length=1, max_length=120)):
+    content = await read_shuffle_upload(file)
+    try:
+        output = await run_in_threadpool(export_shuffle, content, count, start_code, include_solutions, seed, variant_index, department, school)
+        return Response(output, media_type='application/zip', headers={
+            'Content-Disposition': 'attachment; filename="Tron-de-Word.zip"', 'Cache-Control': 'no-store',
+        })
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except Exception:
+        logger.exception('Word shuffle failed')
+        raise HTTPException(500, 'Không tạo được đề Word. Hãy kiểm tra file và thử lại.')
+
 
 # ===================================================
 #   PDF TOOLS ENDPOINTS

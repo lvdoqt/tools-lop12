@@ -4,6 +4,7 @@ Bộ tiện ích hỗ trợ chuẩn bị bài giảng, đề thi và tài liệu
 
 ## Công cụ
 
+- `/word-shuffle`: đọc đề Word Toán 3 phần, nhận diện đáp án, trộn câu trong từng phần, tải ZIP đề và Excel TNmaker 2025.
 - `/edit-html`: mở/dán HTML, sửa mã hoặc văn bản trực quan bên trái, xem trước HTML/CSS và LaTeX bên phải; tải mã HTML về máy.
 - `/tex-to-pdf`: biên dịch mã LaTeX hoặc JSON chứa mã TeX thành PDF.
 - `/tikz-editor`: vẽ hình TikZ, xem trước và tải PNG, PDF hoặc TEX.
@@ -17,7 +18,23 @@ Mở `/edit-html`, chọn **Mở HTML** (tệp `.html`/`.htm` UTF-8, tối đa 2
 
 Công thức hỗ trợ `$…$`, `$$…$$`, `\(…\)`, `\[…\]`, hiển thị bằng KaTeX đóng gói cùng frontend. Công thức trong vùng Văn bản giữ mã LaTeX để chỉnh trực tiếp. **Tải HTML** xuất mã nguồn, giữ nguyên LaTeX; nếu mở tệp độc lập cần trình hiển thị toán của trang đó. Xem trước và soạn văn bản lọc HTML bằng DOMPurify, cô lập trong iframe và không chạy JavaScript. Ảnh/CSS bên ngoài cần URL đầy đủ và kết nối mạng; không tải thư mục tài nguyên đi kèm tệp. Chế độ Văn bản chuẩn hóa phần thân HTML khi sửa; dùng Mã HTML nếu cần giữ cấu trúc nguồn nguyên vẹn. Nội dung chỉ giữ trong phiên trang đang mở; tải tệp trước khi rời trang.
 
-## Kiến trúc
+## Trộn đề Word
+
+Mở `/word-shuffle`, tải một file `.docx` tối đa 4 MB rồi bấm **Phân tích đề**. Đề cần đủ tiêu đề **PHẦN I**, **PHẦN II**, **PHẦN III** và các câu bắt đầu bằng `Câu 1:` hoặc `Câu 1.`, kể cả nhãn in đậm hoặc chia thành nhiều đoạn định dạng trong Word. Phần I dùng nhãn A/B/C/D, gạch chân nhãn đáp án đúng. Phần II dùng a)/b)/c)/d), nhận nhãn ý đúng được gạch chân hoặc kết luận `a) ĐÚNG`, `b) SAI`… trong Lời giải (cùng dòng hoặc khác dòng, không phân biệt hoa/thường). Kết luận tường minh được dùng cho từng ý; nếu không có gạch chân thì cần đủ bốn kết luận. Ý gạch chân nhưng lời giải ghi SAI, hoặc lời giải tự mâu thuẫn, sẽ báo lỗi. Bản giáo viên gạch chân các ý đúng đã nhận diện. Phần III lấy số từ dòng `Đáp án: …`, `Đáp số: …` hoặc `Trả lời: …` dưới `Lời giải`, nhận số âm và cả dấu chấm/phẩy thập phân; bỏ dấu chấm cuối câu khi lấy đáp án (`Đáp số: 446.` → `446`, `Đáp số: 5.19.` → `5,19`). Câu thiếu hoặc có nhiều đáp án Phần I, thiếu đáp án số, thiếu nhãn phương án sẽ chặn xuất và nêu vị trí cần sửa.
+
+Kiểm tra đáp án được đánh dấu trong bản phân tích, nhập **số đề (1–50)** và **mã bắt đầu (3–4 chữ số)**. Đảo thứ tự câu trong cùng phần, đánh số lại từ 1 ở mỗi phần; đồng thời đảo A–D ở Phần I và cập nhật đáp án trong Word/Excel. Giữ thứ tự a–d ở Phần II. Các mã trong một lần xuất khác nhau về thứ tự câu hoặc phương án. Bảng đối chiếu ghi thêm nhãn phương án mới tương ứng nhãn gốc; các tham chiếu rõ ràng như “Chọn B” trong lời giải được cập nhật theo nhãn mới. Không tự giải hoặc sửa đáp án toán học.
+
+Nhập tên **Sở GDĐT** và **Trường THPT** trên trang. Đầu đề có Sở/Trường bên trái, “ĐỀ THI THỬ TN THPT 2027”, “MÔN: TOÁN”, thời gian 90 phút ở khối giữa; dòng dưới là mã đề màu đỏ, đậm, cỡ 18 pt. Đầu đề mới thay phần tiêu đề cũ trước PHẦN I.
+
+ZIP gồm `De_<mã>.docx` dành cho học sinh (bỏ lời giải, dấu gạch chân phương án và màu highlight), tùy chọn `loi_giai-<mã>.docx` gạch chân đáp án đúng và giữ lời giải (không chèn dòng “Đáp án:” ở Phần I, II), `Dap_an_TNMaker_2025.xlsx`, `Doi_chieu_cau_goc.json` và hướng dẫn. Sao chép các khối OOXML và tài nguyên gốc để giữ MathType/OLE, Equation, hình và bảng trong câu. Phương án cùng dòng được tách theo nội dung XML rồi ghép lại theo số phương án mỗi dòng của bản gốc; phương án nhiều đoạn được di chuyển cùng nhau. Phương án trong bảng được xuất thành đoạn văn để đảo vị trí. Bản xem nhanh chỉ hiển thị phần chữ, không dựng hình/MathType; câu hỏi nằm hoàn toàn trong bảng, content control và tài liệu chưa chấp nhận Track Changes sẽ báo lỗi.
+
+Excel đối chiếu với [mẫu nhập trực tiếp TNmaker 2025](https://tnmaker.net/nap-dap-an-phieu-tltn-2025/): một sheet `Dữ liệu`, ô A1 `Câu\Mã đề`, mã đề theo cột, số câu liên tục qua ba phần theo hàng. Phần II dùng chuỗi bốn ký tự `Đ`/`S`, Phần III lưu chuỗi số với dấu phẩy. Khi nhập TNmaker, chọn phiếu 2025 và đúng số câu mỗi phần. Đã kiểm tra cấu trúc theo file mẫu chính thức; chưa kiểm tra nhập trên ứng dụng TNmaker điện thoại.
+
+Frontend tạo từng mã qua `/api/word-shuffle/export` với cùng phiên trộn rồi ghép ZIP bằng trình duyệt; mỗi response tối đa 4 MB, ZIP cuối có thể lớn hơn. Giữ trang mở đến khi xong; có nút hủy. Backend xử lý trong bộ nhớ, không lưu file sau request. API phân tích: `/api/word-shuffle/analyze`. Cài lại requirements để có `openpyxl`, chạy `npm --prefix frontend install` để có `fflate`.
+
+Kiểm tra: `python -m unittest discover -s tests -p test_word_shuffle.py -v`; khi chạy local server, `python tests/browser_word_shuffle.py` thử đủ 4 mã bằng file `DE-TOAN-MAU-TRON.docx` nếu có.
+
+## Kiến trúc ứng dụng
 
 - `frontend/`: React + Vite, giao diện và điều hướng.
 - `backend/main.py`: FastAPI, API xử lý PDF và trả file trong cùng request.

@@ -1,4 +1,4 @@
-const API_BASE = (import.meta.env?.VITE_API_BASE_URL || '/api').replace(/\/$/, '');
+export const API_BASE = (import.meta.env?.VITE_API_BASE_URL || '/api').replace(/\/$/, '');
 export const MAX_PDF_BYTES = 4 * 1024 * 1024;
 
 export function validatePdfFiles(files) {

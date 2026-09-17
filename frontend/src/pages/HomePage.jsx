@@ -3,6 +3,20 @@ import { Link } from 'react-router-dom';
 
 const ALL_TOOLS = [
   {
+    id: 'word-shuffle', path: '/word-shuffle', category: 'edit',
+    icon: 'W', iconClass: 'green', title: 'Trộn đề Word',
+    desc: 'Đọc đề Toán 3 phần, nhận diện đáp án gạch chân và lời giải. Trộn nhiều mã đề, tải ZIP Word và Excel đáp án TNmaker.',
+    tags: [{ text: 'Mới', cls: 'new' }, { text: 'Word' }, { text: 'TNmaker' }],
+    active: true,
+  },
+  {
+    id: 'json-word', path: '/json-to-word', category: 'convert',
+    icon: 'W', iconClass: 'cyan', title: 'Json to Word',
+    desc: 'Xuất JSON Quiz Bank thành đề thi Toán. Tải ZIP gồm hai bản Word với công thức Equation hoặc MathType và hình ảnh nhúng sẵn.',
+    tags: [{ text: 'Mới', cls: 'new' }, { text: 'Word' }, { text: 'MathType' }],
+    active: true,
+  },
+  {
     id: 'edit-html', path: '/edit-html', category: 'edit',
     icon: '</>', iconClass: 'orange', title: 'Edit HTML',
     desc: 'Mở hoặc dán HTML, sửa mã và văn bản trực quan. Đầy đủ công cụ định dạng, bảng, ảnh và công thức LaTeX với bản xem trước trực tiếp.',

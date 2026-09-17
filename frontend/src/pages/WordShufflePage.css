@@ -1,0 +1,28 @@
+.word-shuffle-page { max-width: 1040px; }
+.shuffle-panel { padding: 28px; margin-bottom: 24px; display: grid; gap: 16px; }
+.shuffle-panel h2 { font-size: 1.25rem; }
+.shuffle-panel > p { color: var(--text-secondary); }
+.shuffle-panel > .btn { justify-self: start; }
+.shuffle-counts, .shuffle-options, .shuffle-settings { display: flex; flex-wrap: wrap; gap: 16px; }
+.shuffle-counts > span { padding: 10px 16px; border-radius: 10px; background: var(--bg-secondary); }
+.shuffle-question { border-bottom: 1px solid var(--border-glass); padding: 12px 0; }
+.shuffle-question summary { cursor: pointer; }
+.shuffle-question > summary { display: flex; justify-content: space-between; gap: 16px; }
+.shuffle-question > summary span::before { content: '▸ '; color: var(--text-muted); }
+.shuffle-question[open] > summary span::before { content: '▾ '; }
+.shuffle-answer { color: #047857; }
+.shuffle-invalid { color: #b91c1c; }
+.shuffle-text, .shuffle-error { white-space: pre-wrap; overflow-wrap: anywhere; }
+.shuffle-text { margin: 14px 0; }
+.shuffle-options { margin: 12px 0; }
+.shuffle-settings label { display: grid; gap: 6px; flex: 1; min-width: 150px; }
+.shuffle-settings input { width: 100%; border: 1px solid var(--border-glass-hover); border-radius: 8px; padding: 10px 12px; font: inherit; color: var(--text-primary); background: white; }
+.shuffle-checkbox { display: flex; gap: 10px; align-items: center; }
+.shuffle-panel ul { padding-left: 22px; }
+.shuffle-panel a { color: var(--accent-amber); text-decoration: underline; }
+.shuffle-heading-preview { display: grid; grid-template-columns: 36% 64%; gap: 12px 0; padding: 20px 12px; border: 1px solid var(--border-glass); background: white; text-align: center; font-family: 'Times New Roman', serif; }
+.shuffle-heading-preview > div { display: flex; flex-direction: column; padding: 0 8px; overflow-wrap: anywhere; }
+.shuffle-heading-preview > div:first-child { text-transform: uppercase; }
+.shuffle-heading-preview > b { grid-column: 1 / -1; font-size: 24px; color: #f00; }
+@media (max-width: 600px) { .shuffle-heading-preview { font-size: 11px; padding: 14px 4px; } }
+@media (max-width: 600px) { .shuffle-panel { padding: 18px; } .shuffle-question > summary { flex-wrap: wrap; } }

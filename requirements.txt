@@ -5,3 +5,10 @@ PyMuPDF==1.28.2
 requests==2.34.2
 pydantic==2.13.4
 python-dotenv==1.2.1
+python-docx==1.2.0
+openpyxl==3.1.5
+latex2mathml==3.81.0
+docx-equation==0.3.0
+lxml==6.1.1
+Pillow==12.3.0
+fonttools==4.63.0

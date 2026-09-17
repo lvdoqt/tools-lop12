@@ -101,6 +101,29 @@ class LatexQuizTests(unittest.TestCase):
         self.assertIn(r'$\left\{\begin{aligned}&x=\frac{1}{2}\\&y<2\end{aligned}\right.$', unescape(table))
         self.assertIn(r'$\left[\begin{aligned}&a=1\\&a=2\end{aligned}\right.$', unescape(table))
 
+    def test_table_cell_groups_are_hidden_and_math_braces_preserved(self):
+        source = r'''\begin{ex}\begin{center}
+        $M_1\quad$\begin{tabular}{|c|c|c|}
+        \hline Nhóm &{$[8; 10)$}&{{ $[10; 12)$ }}\\\\
+        \hline Tần số & 3 & 4 \\\\
+        \hline\end{tabular}
+        $M_2\quad$\begin{tabular}{|c|c|c|}
+        \hline Nhóm &{$[8; 10)$}&{$[10; 12)$}\\\\
+        \hline Tần số & 6 & 8 \\\\
+        \hline\end{tabular}\end{center}
+        \shortans{1}\end{ex}'''
+        table = parse_quiz(source)['quiz']['questions'][0]['question']
+        self.assertEqual(table.count('<table '), 2)
+        self.assertEqual(table.count('<tr>'), 4)
+        self.assertEqual(table.count('>$[8; 10)$</td>'), 2)
+        self.assertEqual(table.count('>$[10; 12)$</td>'), 2)
+
+        source = r'\begin{ex}\begin{tabular}{ccc}{$\frac{1}{2}$}&{$\{1;2\}$}&{\textbf{Label}}\end{tabular}\shortans{1}\end{ex}'
+        table = parse_quiz(source)['quiz']['questions'][0]['question']
+        self.assertIn(r'>$\frac{1}{2}$</td>', table)
+        self.assertIn(r'>$\{1;2\}$</td>', table)
+        self.assertIn('>Label</td>', table)
+
     def test_tables_in_options_and_explanations_have_borders(self):
         table = r'\begin{tabular}{cc}A&B\\1&2\end{tabular}'
         source = r'\begin{ex}Chọn bảng\choice{\True ' + table + r'}{B}{C}{D}\loigiai{' + table + r'}\end{ex}'

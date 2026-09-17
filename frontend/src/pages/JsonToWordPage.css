@@ -1,0 +1,29 @@
+.word-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; align-items: start; }
+.word-input, .word-settings, .word-summary { padding: 22px; min-width: 0; }
+.word-input .json-toolbar { padding: 0 0 16px; flex-wrap: wrap; gap: 12px; }
+.word-label { display: block; margin-bottom: 8px; font-weight: 600; }
+.word-source { width: 100%; min-height: 450px; resize: vertical; padding: 16px; border: 1px solid var(--border-glass); border-radius: 10px; background: rgba(255,255,255,.65); color: var(--text-primary); font: 13px/1.65 Consolas, monospace; tab-size: 2; }
+.word-muted, .word-reference { color: var(--text-muted); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.word-input > p { margin-top: 12px; }
+.word-settings { display: flex; flex-direction: column; gap: 16px; }
+.word-settings h2, .word-summary h2 { font-size: 18px; margin: 0; }
+.word-settings label { display: flex; flex-direction: column; gap: 7px; font-size: 13px; font-weight: 600; }
+.word-settings input:not([type=checkbox]) { width: 100%; min-width: 0; padding: 10px; border: 1px solid var(--border-glass); border-radius: 8px; background: #fff; color: var(--text-primary); font: inherit; }
+.word-settings-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.word-settings .word-checkbox { flex-direction: row; align-items: center; line-height: 1.5; }
+.word-checkbox input { accent-color: #b45309; }
+.word-format { padding: 12px; border-radius: 8px; background: rgba(245,158,11,.08); font-size: 13px; line-height: 1.6; }
+.word-format p { margin-top: 6px; }
+.word-status, .word-error { margin-top: 20px; padding: 14px 18px; border-radius: 10px; overflow-wrap: anywhere; }
+.word-status { background: rgba(245,158,11,.09); }
+.word-error { color: #991b1b; background: #fef2f2; border: 1px solid #fecaca; }
+.word-summary { margin-top: 20px; }
+.word-summary p { margin-top: 12px; }
+.word-counts { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
+.word-counts span { padding: 8px 12px; border-radius: 8px; background: rgba(245,158,11,.08); }
+.word-success { color: #166534; }
+.word-warning { color: #92400e; }
+.word-reference { margin-top: 20px; }
+.word-reference a { color: #92400e; text-decoration: underline; }
+@media (max-width: 950px) { .word-layout { grid-template-columns: 1fr; } .word-source { min-height: 320px; } }
+@media (max-width: 500px) { .word-input, .word-settings, .word-summary { padding: 16px; } .word-counts { flex-direction: column; } }

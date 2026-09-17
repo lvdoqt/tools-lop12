@@ -213,6 +213,8 @@ body {
 }
 
 .navbar-nav a {
+  display: block;
+  white-space: nowrap;
   padding: 8px 16px;
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
@@ -231,6 +233,14 @@ body {
   color: #b45309;
   background: rgba(245, 158, 11, 0.18);
   font-weight: 700;
+}
+
+@media (min-width: 769px) and (max-width: 1300px) {
+  .navbar { padding: 0 16px; gap: 12px; }
+  .navbar-brand { flex-shrink: 0; }
+  .navbar-nav { min-width: 0; overflow-x: auto; gap: 2px; }
+  .navbar-nav a { padding: 8px 9px; font-size: 12px; }
+  .navbar-subtitle { font-size: 8px; letter-spacing: 1px; }
 }
 
 /* ===== MAIN CONTENT ===== */
