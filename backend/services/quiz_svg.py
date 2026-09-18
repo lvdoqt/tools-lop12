@@ -11,7 +11,6 @@ from .tikz_renderer import LATEX_ONLINE_URL, build_document
 
 def render_compat_svg(source):
     document = build_document(source)
-    document = document.replace(r"\begin{document}", "\\usepackage{tkz-tab}\n\\begin{document}", 1)
     try:
         params = {"text": document, "command": "pdflatex"}
         if len(urlencode(params)) < 7000:

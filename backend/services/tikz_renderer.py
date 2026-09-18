@@ -34,12 +34,22 @@ def normalize_source(source: str) -> str:
 def build_document(source: str) -> str:
     source = normalize_source(source).strip()
     if "\\documentclass" in source:
+        # Full documents may already load tkz-tab, including in a package list.
+        preamble = source.split(r"\begin{document}", 1)[0]
+        preamble = re.sub(r"(?m)(?<!\\)%.*$", "", preamble)
+        has_tkz_tab = re.search(
+            r"\\usepackage\s*(?:\[[^\]]*\]\s*)?\{[^}]*\btkz-tab\b[^}]*\}",
+            preamble,
+        )
+        if r"\tkzTab" in source and not has_tkz_tab:
+            source = source.replace(r"\begin{document}", "\\usepackage{tkz-tab}\n\\begin{document}", 1)
         return source
     return """\\documentclass[tikz,border=10pt]{standalone}
 \\usepackage[T5]{fontenc}
 \\usepackage[utf8]{inputenc}
 \\usepackage[vietnamese]{babel}
 \\usepackage{amsmath,amssymb}
+\\usepackage{tkz-tab}
 \\usetikzlibrary{arrows.meta,automata,backgrounds,calc,decorations.pathmorphing,intersections,matrix,patterns,positioning,shapes.geometric}
 \\begin{document}
 %s

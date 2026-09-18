@@ -7,6 +7,16 @@ import TikzLibrary from '../components/TikzLibrary';
 
 const TEMPLATES = [
   {
+    id: 'variation', label: 'Bảng biến thiên',
+    source: `\\begin{tikzpicture}
+  \\tkzTabInit[lgt=1.5, espcl=2.5, deltacl=0.6]
+    {$x$ / 0.8, $y'$ / 0.8, $y$ / 2.2}
+    {$-\\infty$, $x_1$, $x_2$, $+\\infty$}
+  \\tkzTabLine{, +, 0, -, 0, +, }
+  \\tkzTabVar{-/ $-\\infty$, +/ $y_{\\text{CĐ}}$, -/ $y_{\\text{CT}}$, +/ $+\\infty$}
+\\end{tikzpicture}`,
+  },
+  {
     id: 'quadratic', label: 'Hàm bậc 2',
     source: `\\begin{tikzpicture}[scale=1.2]
   \\draw[->] (-0.5,0) -- (4.5,0) node[right] {$x$};

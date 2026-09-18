@@ -8,11 +8,31 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 from backend.main import app
 from backend.services import tikz_library as library
-from backend.services.tikz_renderer import render_tikz
+from backend.services.tikz_renderer import build_document, render_tikz
 import pymupdf
 
 ENV = {'SUPABASE_URL': 'https://example.supabase.co', 'SUPABASE_SECRET_KEY': '', 'SUPABASE_SERVICE_ROLE_KEY': 'server-secret', 'TIKZ_LIBRARY_KEY': 'private-library'}
 SVG = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0L10 10"/></svg>'
+
+
+class VariationTableTests(unittest.TestCase):
+    def test_snippet_loads_variation_table_package(self):
+        source = r"\begin{tikzpicture}\tkzTabLine{,+,0,-,}\end{tikzpicture}"
+        document = build_document(source)
+        self.assertIn(r'\usepackage{tkz-tab}', document.split(r'\begin{document}')[0])
+        self.assertIn(source, document)
+
+    def test_full_document_loads_missing_package(self):
+        source = r'\documentclass{standalone}\begin{document}\tkzTabLine{,+,}\end{document}'
+        self.assertIn(r'\usepackage{tkz-tab}', build_document(source).split(r'\begin{document}')[0])
+
+    def test_existing_package_options_are_preserved(self):
+        source = r'\documentclass{standalone}\usepackage[english]{tkz-tab}\begin{document}\tkzTabLine{,+,}\end{document}'
+        self.assertEqual(build_document(source), source)
+
+    def test_commented_package_is_not_treated_as_loaded(self):
+        source = '\\documentclass{standalone}\n% \\usepackage{tkz-tab}\n\\begin{document}\\tkzTabLine{,+,}\\end{document}'
+        self.assertIn('\n\\usepackage{tkz-tab}\n\\begin{document}', build_document(source))
 
 
 @patch.dict(os.environ, ENV)
