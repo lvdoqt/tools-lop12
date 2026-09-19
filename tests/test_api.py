@@ -35,6 +35,20 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(self.client.get("/api/health").json()["status"], "ok")
         self.assertEqual(self.upload("info").json(), {"pages": 3})
 
+    def test_latex_to_mathtype_returns_embeddable_ole(self):
+        response = self.client.post("/api/json-to-word/latex-to-mathtype", json={"latex": r"\frac{x_1^2}{\sqrt{2}}"})
+        self.assertEqual(response.status_code, 200, response.text[:200])
+        result = response.json()
+        ole = base64.b64decode(result["mathtype_ole_base64"])
+        self.assertEqual(response.headers["Cache-Control"], "no-store")
+        self.assertEqual(ole[:8], bytes.fromhex("d0cf11e0a1b11ae1"))
+        self.assertIn("<m:oMath", result["omml"])
+        self.assertIn("<math", result["mathml"])
+
+    def test_latex_to_mathtype_rejects_invalid_and_oversized_input(self):
+        self.assertEqual(self.client.post("/api/json-to-word/latex-to-mathtype", json={"latex": r"\unknownmacro{x}"}).status_code, 422)
+        self.assertEqual(self.client.post("/api/json-to-word/latex-to-mathtype", json={"latex": "x" * 20_001}).status_code, 422)
+
     def test_merge_returns_downloadable_pdf_in_same_request(self):
         response = self.client.post("/api/pdf-tools/merge", files=[
             ("files", ("a.pdf", self.pdf, "application/pdf")),

@@ -18,6 +18,7 @@ from fastapi.responses import Response, JSONResponse
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 import pymupdf
+from lxml import etree
 
 if __package__:
     from .services.tikz_renderer import render_tikz
@@ -26,6 +27,7 @@ if __package__:
     from .services.cloudinary_upload import cloudinary_config, upload_svg
     from .services.quiz_word import validate_quiz, export_quiz
     from .services.word_shuffle import Exam, export_shuffle, MAX_UPLOAD
+    from .services.word_math import compile_math
 else:
     from services.tikz_renderer import render_tikz
     from services.latex_quiz import parse_quiz
@@ -33,6 +35,7 @@ else:
     from services.cloudinary_upload import cloudinary_config, upload_svg
     from services.quiz_word import validate_quiz, export_quiz
     from services.word_shuffle import Exam, export_shuffle, MAX_UPLOAD
+    from services.word_math import compile_math
 
 MAX_PDF_BYTES = 4 * 1024 * 1024
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -196,6 +199,39 @@ class FormulaPreview(BaseModel):
 
 class WordExportRequest(WordCheckRequest):
     previews: dict[str, FormulaPreview] = Field(default_factory=dict, max_length=1500)
+
+
+class LatexToMathTypeRequest(BaseModel):
+    """A single raw LaTeX math expression (without $...$ delimiters)."""
+
+    latex: str = Field(min_length=1, max_length=20_000)
+
+
+@app.post('/api/json-to-word/latex-to-mathtype')
+async def latex_to_mathtype(request: LatexToMathTypeRequest):
+    """Compile LaTeX into an OLE MathType object that can be embedded in DOCX."""
+    try:
+        formula = await run_in_threadpool(compile_math, request.latex.strip())
+        omml = etree.tostring(formula['omml'], encoding='unicode')
+        result = {
+            'id': formula['id'],
+            'latex': formula['latex'],
+            'mathml': formula['mathml'],
+            'omml': omml,
+            # Complete Compound File Binary object (not a preview image).
+            # Embed decoded bytes in word/embeddings/*.bin as a DOCX OLE object
+            # to keep the formula editable in MathType.
+            'mathtype_ole_base64': base64.b64encode(formula['ole']).decode('ascii'),
+            'mathtype_ole_content_type': 'application/vnd.openxmlformats-officedocument.oleObject',
+        }
+        response = JSONResponse(result, headers={'Cache-Control': 'no-store'})
+        check_output_size(len(response.body))
+        return response
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    except Exception:
+        logger.exception('LaTeX to MathType conversion failed')
+        raise HTTPException(422, 'KhÃ´ng chuyá»ƒn Ä‘Æ°á»£c LaTeX nÃ y sang MathType.')
 
 
 @app.post('/api/json-to-word/validate')

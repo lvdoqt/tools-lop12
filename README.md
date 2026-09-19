@@ -54,6 +54,10 @@ TikZ và TeX cần backend cùng kết nối Internet đến LaTeX.Online. Công
 
 Frontend và API dùng chung domain: `/api/*` chuyển đến Python function; các trang giao diện chuyển đến `index.html`. API mặc định dùng đường dẫn tương đối `/api`, không cần biến môi trường hay khóa dịch vụ. Nếu từng đặt `VITE_API_BASE_URL` trỏ đến localhost, hãy xóa biến đó trước khi deploy.
 
+### API LaTeX → MathType
+
+App khác có thể gọi `POST https://tool.lop12.com/api/json-to-word/latex-to-mathtype` với JSON `{"latex":"\\frac{x_1^2}{\\sqrt{2}}"}` (gửi biểu thức LaTeX thuần, không bọc `$...$`). Response có `mathtype_ole_base64`: giải mã Base64 thành tệp `.bin`, đặt vào `word/embeddings/` của DOCX và tạo quan hệ OLE với content type `application/vnd.openxmlformats-officedocument.oleObject`. Đây là đối tượng MathType chỉnh sửa được, không phải ảnh. Response cũng có `omml` cho Office Math và `mathml` để xem trước/chuyển đổi tiếp. CORS đã mở cho app trên domain khác.
+
 Riêng chức năng upload hình của LaTeX → JSON cần cấu hình Cloudinary như hướng dẫn bên dưới.
 
 Giới hạn:
