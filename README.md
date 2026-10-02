@@ -173,4 +173,12 @@ Các bài kiểm tra backend bao gồm nội dung PDF/ZIP, giới hạn upload t
 
 ## Thư viện TikZ: Cloudinary + Supabase
 
-Trang `/tikz-editor` có thư viện lưu ảnh SVG/PNG và mã TikZ gốc, tìm kiếm, mở lại, sao chép link/mã và tải file. Chạy [SQL tạo bảng](supabase/tikz_library.sql), thêm cấu hình trong `.env.example`, rồi làm theo [hướng dẫn thiết lập](supabase/README.md). Mở thư viện bằng `TIKZ_LIBRARY_KEY` để tự lưu các hình vẽ thành công. Khóa Supabase chỉ dùng ở backend.
+Trang `/tikz-editor` có thư viện công khai lưu ảnh SVG/PNG và mã TikZ gốc, tìm kiếm, mở lại, sao chép link/mã và tải file. Chạy [SQL tạo bảng](supabase/tikz_library.sql), thêm cấu hình trong `.env.example`, rồi làm theo [hướng dẫn thiết lập](supabase/README.md). Khóa Supabase chỉ dùng ở backend.
+
+## Chấm trắc nghiệm cho giáo viên
+
+Mở `/giao-vien` để đăng ký/đăng nhập tài khoản giáo viên, nhập đáp án và số câu (tối đa 120), in phiếu A4, rồi chụp/chọn ảnh phiếu trên điện thoại để chấm. Ảnh và kết quả được xử lý qua backend; đề và kết quả lưu trong Supabase. Trang web dùng camera qua trình duyệt, không cần cài app. Tài khoản đăng ký ở trang này được tạo hồ sơ vai trò giáo viên.
+
+Thiết lập thêm `SUPABASE_ANON_KEY` trong `.env`/Vercel Environment Variables cùng `SUPABASE_URL` và khóa backend `SUPABASE_SECRET_KEY` (hoặc `SUPABASE_SERVICE_ROLE_KEY`). Lấy anon/publishable key tại Supabase Project Settings → API Keys; không đặt secret key với tiền tố `VITE_`. Trong SQL Editor chạy [teacher_quiz.sql](supabase/teacher_quiz.sql). Nếu bật xác minh email trong Supabase Auth, giáo viên cần xác minh email trước khi đăng nhập.
+
+Phiếu chấm theo bố cục A4 cố định. Khi chụp, cần chụp đủ trang, để trang thẳng và đủ sáng. Các câu có dấu hiệu tô chưa rõ sẽ được đánh dấu để giáo viên kiểm tra. Chức năng hiện nhận diện phiếu một trang; không tự hiệu chỉnh ảnh bị nghiêng hoặc méo phối cảnh.

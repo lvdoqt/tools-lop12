@@ -1,17 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { API_BASE } from '../api';
 
-const LIBRARY_KEY_STORAGE = 'tools-all-tikz-library-key';
-function readLibraryKey() {
-  try { return localStorage.getItem(LIBRARY_KEY_STORAGE) || ''; } catch { return ''; }
-}
-function rememberLibraryKey(key) {
-  try {
-    if (key) localStorage.setItem(LIBRARY_KEY_STORAGE, key);
-    else localStorage.removeItem(LIBRARY_KEY_STORAGE);
-  } catch { /* Library access still works when browser storage is unavailable. */ }
-}
-
 function downloadTikz(source, title = 'tikz-diagram') {
   const url = URL.createObjectURL(new Blob([source], { type: 'application/x-tex;charset=utf-8' }));
   const a = document.createElement('a');
@@ -20,9 +9,7 @@ function downloadTikz(source, title = 'tikz-diagram') {
 }
 
 export default function TikzLibrary({ compiled, onOpen, addToast }) {
-  const [key, setKey] = useState(readLibraryKey);
-  const [restoring, setRestoring] = useState(() => Boolean(key));
-  const [connected, setConnected] = useState(false);
+  const [connected, setConnected] = useState(true);
   const [items, setItems] = useState([]);
   const [query, setQuery] = useState('');
   const [activeQuery, setActiveQuery] = useState('');
@@ -38,32 +25,24 @@ export default function TikzLibrary({ compiled, onOpen, addToast }) {
 
   const request = useCallback(async (path = '', method = 'GET', body) => {
     const response = await fetch(`${API_BASE}/tikz/library${path}`, {
-      method, headers: { 'Content-Type': 'application/json', 'X-Library-Key': key.trim() },
+      method, headers: { 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     const data = await response.json().catch(() => ({}));
-    if (response.status === 401) {
-      rememberLibraryKey('');
-      setConnected(false);
-      setItems([]); setDetail(null);
-    }
     if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Không truy cập được thư viện.');
     return data;
-  }, [key]);
+  }, []);
 
   useEffect(() => {
-    if (!restoring) return;
     let cancelled = false;
     request('?offset=0').then(rows => {
       if (cancelled) return;
       setItems(rows); setMore(rows.length === 25); setConnected(true);
     }).catch(e => {
       if (!cancelled) setError(e.message);
-    }).finally(() => {
-      if (!cancelled) setRestoring(false);
     });
     return () => { cancelled = true; };
-  }, [restoring, request]);
+  }, [request]);
 
   async function load(append = false) {
     setBusy(true); setError('');
@@ -72,7 +51,6 @@ export default function TikzLibrary({ compiled, onOpen, addToast }) {
       const rows = await request(`?offset=${append ? items.length : 0}&q=${encodeURIComponent(search)}`);
       setItems(previous => append ? [...previous, ...rows] : rows);
       setMore(rows.length === 25); setActiveQuery(search); setConnected(true);
-      rememberLibraryKey(key.trim());
     } catch (e) { setError(e.message); }
     finally { setBusy(false); }
   }
@@ -122,15 +100,10 @@ export default function TikzLibrary({ compiled, onOpen, addToast }) {
   return <section className="glass-panel tikz-library">
     <h2>Thư viện hình TikZ</h2>
     <p>Ảnh lưu trên Cloudinary, mã TikZ lưu trên Supabase. Mở thư viện để tự lưu mỗi lần vẽ thành công.</p>
-    {!connected ? <form className="tikz-library-toolbar" onSubmit={e => { e.preventDefault(); load(); }}>
-      <label>Mã truy cập thư viện<input type="password" value={key} disabled={restoring || busy} onChange={e => setKey(e.target.value)} autoComplete="current-password" required /></label>
-      <button className="btn btn-primary" disabled={busy || restoring}>{busy || restoring ? 'Đang mở...' : 'Mở thư viện'}</button>
-      <small>Mã được nhớ trên trình duyệt này sau khi mở thành công. Bấm “Khóa thư viện” để quên mã.</small>
-    </form> : <>
+    <>
       <div className="tikz-library-toolbar">
         <label>Tên hình cho lần lưu tiếp theo<input value={title} maxLength={200} onChange={e => setTitle(e.target.value)} placeholder="Ví dụ: Hình chóp S.ABCD" /></label>
         <button className="btn btn-primary" disabled={!compiled?.svg || saving || savedId === compiled?.id} onClick={save}>{saving ? 'Đang lưu lên đám mây...' : savedId === compiled?.id ? 'Đã lưu hình hiện tại' : 'Lưu vào thư viện'}</button>
-        <button className="tool-btn" disabled={busy || saving} onClick={() => { rememberLibraryKey(''); setConnected(false); setKey(''); setItems([]); setDetail(null); }}>Khóa thư viện</button>
       </div>
       <form className="tikz-library-toolbar" onSubmit={e => { e.preventDefault(); load(); }}>
         <label>Tìm theo tên<input value={query} maxLength={200} onChange={e => setQuery(e.target.value)} placeholder="Tên hình..." /></label>
@@ -168,7 +141,7 @@ export default function TikzLibrary({ compiled, onOpen, addToast }) {
           <button className="tool-btn" onClick={() => setDetail(null)}>Đóng mã</button>
         </div>
       </div>}
-    </>}
+    </>
     {error && <div className="alert alert-error" role="alert">{error}</div>}
   </section>;
 }

@@ -1,11 +1,10 @@
-"""Private shared TikZ library via Supabase REST. Credentials stay on server."""
+"""Public shared TikZ library via Supabase REST. Credentials stay on server."""
 import hashlib
-import hmac
 import os
 from uuid import UUID
 
 import requests
-from fastapi import APIRouter, Header, HTTPException, Query, Depends
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 from .cloudinary_upload import upload_svg
 
@@ -16,15 +15,9 @@ def supabase_key():
     return os.getenv('SUPABASE_SECRET_KEY', '').strip() or os.getenv('SUPABASE_SERVICE_ROLE_KEY', '').strip()
 
 
-def authorize(x_library_key: str = Header(default='')):
-    expected = os.getenv('TIKZ_LIBRARY_KEY', '').strip()
-    if not expected or not os.getenv('SUPABASE_URL') or not supabase_key():
-        raise HTTPException(503, 'Chưa cấu hình SUPABASE_URL, SUPABASE_SECRET_KEY (hoặc SUPABASE_SERVICE_ROLE_KEY) và TIKZ_LIBRARY_KEY trên backend.')
-    if not hmac.compare_digest(x_library_key.encode(), expected.encode()):
-        raise HTTPException(401, 'Mã truy cập thư viện không đúng.')
-
-
 def database(method, params=None, body=None):
+    if not os.getenv('SUPABASE_URL') or not supabase_key():
+        raise HTTPException(503, 'Chưa cấu hình SUPABASE_URL và SUPABASE_SECRET_KEY (hoặc SUPABASE_SERVICE_ROLE_KEY) trên backend.')
     url = os.environ['SUPABASE_URL'].rstrip('/') + '/rest/v1/tikz_drawings'
     key = supabase_key()
     headers = {'apikey': key, 'Prefer': 'return=representation,resolution=ignore-duplicates'}
@@ -50,7 +43,7 @@ class Rename(BaseModel):
     title: str = Field(min_length=1, max_length=200)
 
 
-@router.get('', dependencies=[Depends(authorize)])
+@router.get('')
 def list_drawings(offset: int = Query(0, ge=0), q: str = Query('', max_length=200)):
     params = {'select': 'id,title,svg_url,png_url,created_at,dpi', 'order': 'created_at.desc,id.desc', 'limit': 25, 'offset': offset}
     if q.strip():
@@ -59,7 +52,7 @@ def list_drawings(offset: int = Query(0, ge=0), q: str = Query('', max_length=20
     return database('GET', params)
 
 
-@router.get('/{identifier}', dependencies=[Depends(authorize)])
+@router.get('/{identifier}')
 def get_drawing(identifier: UUID):
     rows = database('GET', {'id': f'eq.{identifier}', 'select': '*'})
     if not rows:
@@ -67,7 +60,7 @@ def get_drawing(identifier: UUID):
     return rows[0]
 
 
-@router.post('', dependencies=[Depends(authorize)])
+@router.post('')
 def save_drawing(drawing: Drawing):
     digest = hashlib.sha256((drawing.source + '\0' + str(drawing.dpi) + '\0' + drawing.svg).encode()).hexdigest()
     rows = database('GET', {'content_hash': f'eq.{digest}', 'select': '*'})
@@ -89,7 +82,7 @@ def save_drawing(drawing: Drawing):
     return rows[0] if rows else database('GET', {'content_hash': f'eq.{digest}', 'select': '*'})[0]
 
 
-@router.patch('/{identifier}', dependencies=[Depends(authorize)])
+@router.patch('/{identifier}')
 def rename_drawing(identifier: UUID, drawing: Rename):
     rows = database('PATCH', {'id': f'eq.{identifier}'}, {'title': drawing.title.strip() or 'Hình TikZ'})
     if not rows:
@@ -97,7 +90,7 @@ def rename_drawing(identifier: UUID, drawing: Rename):
     return rows[0]
 
 
-@router.delete('/{identifier}', dependencies=[Depends(authorize)])
+@router.delete('/{identifier}')
 def delete_drawing(identifier: UUID):
     database('DELETE', {'id': f'eq.{identifier}'})
     return {'deleted': True}

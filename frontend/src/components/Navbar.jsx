@@ -11,6 +11,7 @@ export default function Navbar() {
         </div>
       </Link>
       <ul className="navbar-nav">
+        <li><NavLink to="/giao-vien">Giáo viên</NavLink></li>
         <li><NavLink to="/word-shuffle">Trộn đề Word</NavLink></li>
         <li><NavLink to="/json-formatter">{`{ } JSON`}</NavLink></li>
         <li><NavLink to="/tikz-editor">TikZ</NavLink></li>

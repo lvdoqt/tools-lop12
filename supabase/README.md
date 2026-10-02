@@ -6,14 +6,13 @@
    ```dotenv
    SUPABASE_URL=https://YOUR_PROJECT.supabase.co
    SUPABASE_SECRET_KEY=sb_secret_YOUR_SERVER_KEY
-   TIKZ_LIBRARY_KEY=YOUR_PRIVATE_LIBRARY_PASSWORD
    ```
 
    Lấy Project URL và Secret key trong cấu hình Supabase. Nếu dùng khóa JWT `service_role` cũ, đặt `SUPABASE_SERVICE_ROLE_KEY` thay cho `SUPABASE_SECRET_KEY`. Không dùng khóa `anon` / `publishable`. Backend hỗ trợ cả hai loại khóa quản trị; khóa mới chỉ gửi qua header `apikey` theo [tài liệu Supabase](https://supabase.com/docs/guides/getting-started/api-keys).
 
 3. Giữ cấu hình Cloudinary hiện có: `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, `CLOUDINARY_FOLDER`.
 4. Khởi động lại backend. Khi triển khai Vercel, thêm các biến tương tự vào Environment Variables của project và redeploy; `.env` trên máy không tự được đưa lên Vercel.
-5. Mở `/tikz-editor`, nhập giá trị `TIKZ_LIBRARY_KEY` vào ô **Mã truy cập thư viện**. Đây là mật khẩu tự đặt, không phải khóa API Supabase. Vẽ hình để tự lưu, hoặc mở thư viện sau khi vẽ để lưu kết quả vừa tạo.
+5. Mở `/tikz-editor` để xem và dùng thư viện TikZ công khai. Vẽ hình để tự lưu kết quả vừa tạo.
 
 Mỗi bản ghi lưu nguyên mã người dùng nhập, tên, DPI, link SVG/PNG và ID Cloudinary. SVG được tạo từ cùng PDF với PNG, chữ chuyển thành đường nét. Link PNG dùng chuyển đổi Cloudinary `f_png,dn_<dpi>`. Mở một hình cũ không gọi lại trình biên dịch. Nút tải TEX trong thư viện xuất mã gốc; TEX của lần biên dịch mới là tài liệu LaTeX đã được bọc để biên dịch.
 

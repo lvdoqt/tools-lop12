@@ -12,6 +12,7 @@ import LatexToJsonPage from './pages/LatexToJsonPage';
 const HtmlEditorPage = lazy(() => import('./pages/HtmlEditorPage'));
 const JsonToWordPage = lazy(() => import('./pages/JsonToWordPage'));
 const WordShufflePage = lazy(() => import('./pages/WordShufflePage'));
+const TeacherPage = lazy(() => import('./pages/TeacherPage'));
 
 export default function App() {
   return (
@@ -20,6 +21,7 @@ export default function App() {
       <Navbar />
       <Routes>
         <Route path="/" element={<HomePage />} />
+        <Route path="/giao-vien" element={<Suspense fallback={<main className="main-content">Đang mở trang giáo viên…</main>}><TeacherPage /></Suspense>} />
         <Route path="/word-shuffle" element={<Suspense fallback={<main className="main-content">Đang mở Trộn đề Word…</main>}><WordShufflePage /></Suspense>} />
         <Route path="/json-formatter" element={<JsonFormatterPage />} />
         <Route path="/tikz-editor" element={<TikzEditorPage />} />

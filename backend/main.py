@@ -71,9 +71,12 @@ app = FastAPI(
 # CORS — allow all local origins
 if __package__:
     from .services.tikz_library import router as tikz_library_router
+    from .services.teacher_quiz import router as teacher_quiz_router
 else:
     from services.tikz_library import router as tikz_library_router
+    from services.teacher_quiz import router as teacher_quiz_router
 app.include_router(tikz_library_router)
+app.include_router(teacher_quiz_router)
 
 app.add_middleware(
     CORSMiddleware,
