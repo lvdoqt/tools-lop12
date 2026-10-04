@@ -1,0 +1,1192 @@
+/* ==========================================================================
+   CASIO fx-580VN X CLASSWIZ - HYPER-REALISTIC CALCULATOR STYLING
+   ========================================================================== */
+
+/* Page Container */
+.casio-hub-page {
+  position: relative;
+  z-index: 1;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 85px 20px 60px;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  color: var(--text-primary, #2b2111);
+}
+
+/* Header Banner */
+.casio-header-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 24px;
+  max-width: 1320px;
+  margin: 0 auto 28px;
+  flex-wrap: wrap;
+}
+
+.casio-header-meta {
+  max-width: 720px;
+}
+
+.casio-badge-tag {
+  display: inline-block;
+  padding: 4px 10px;
+  background: rgba(217, 119, 6, 0.12);
+  color: #b45309;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  border: 1px solid rgba(217, 119, 6, 0.25);
+}
+
+.casio-title {
+  font-size: clamp(1.8rem, 3.2vw, 2.6rem);
+  font-weight: 900;
+  line-height: 1.15;
+  letter-spacing: -0.035em;
+  color: #1e1b15;
+  margin: 0 0 8px;
+}
+
+.casio-title span {
+  color: #d97706;
+  background: linear-gradient(135deg, #d97706, #ea580c);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.casio-subtitle {
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: #635238;
+  margin: 0;
+}
+
+/* Toolbar Controls */
+.casio-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.casio-angle-selector {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  background: #f1ebd9;
+  border: 1px solid #dfd4be;
+  border-radius: 9px;
+}
+
+.angle-btn {
+  padding: 7px 12px;
+  border: 0;
+  background: transparent;
+  color: #7a6b52;
+  font-size: 0.76rem;
+  font-weight: 700;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.angle-btn.active {
+  background: #ffffff;
+  color: #b45309;
+  box-shadow: 0 1px 4px rgba(71, 55, 20, 0.12);
+}
+
+.sound-toggle-btn {
+  padding: 8px 14px;
+  border: 1px solid #dfd4be;
+  background: #fffcf5;
+  color: #635238;
+  font-size: 0.76rem;
+  font-weight: 700;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.sound-toggle-btn:hover {
+  background: #ffffff;
+  border-color: #d97706;
+}
+
+.sound-toggle-btn.on {
+  color: #059669;
+  border-color: #a7f3d0;
+  background: #f0fdf4;
+}
+
+/* Workspace Layout (3 Columns) */
+.casio-workspace-grid {
+  display: grid;
+  grid-template-columns: 280px minmax(380px, 440px) 320px;
+  gap: 24px;
+  justify-content: center;
+  align-items: start;
+  max-width: 1320px;
+  margin: 0 auto;
+}
+
+/* Toast Notification */
+.casio-toast-notification {
+  position: absolute;
+  top: -45px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(24, 27, 33, 0.95);
+  color: #fef08a;
+  padding: 7px 16px;
+  border-radius: 20px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  z-index: 100;
+  pointer-events: none;
+  animation: fadeInDown 0.2s ease;
+  white-space: nowrap;
+}
+
+@keyframes fadeInDown {
+  from { opacity: 0; transform: translate(-50%, -8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* ==========================================================================
+   CENTER CALCULATOR CONTAINER & PHYSICAL HARDWARE
+   ========================================================================== */
+.casio-center-stage {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
+
+/* The Authentic Physical Casio fx-580VN X Body */
+.casio-device {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  padding: 22px 18px 24px;
+  box-sizing: border-box;
+  
+  /* Casing finish: Realistic dark charcoal with geometric carbon-mesh texture */
+  background-color: #1a1d21;
+  background-image: 
+    radial-gradient(circle at 50% 0%, #2f343b 0%, #1a1d21 65%, #131518 100%),
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.015) 0px, rgba(255, 255, 255, 0.015) 2px, transparent 2px, transparent 5px),
+    repeating-linear-gradient(-45deg, rgba(0, 0, 0, 0.15) 0px, rgba(0, 0, 0, 0.15) 2px, transparent 2px, transparent 5px);
+  
+  /* Authentic ClassWiz form factor: rounded top, ergonomic tapered bottom */
+  border-radius: 28px 28px 36px 36px;
+  border: 2px solid #32373f;
+  
+  /* High-end 3D hardware shadows and edge highlights */
+  box-shadow: 
+    0 35px 80px rgba(0, 0, 0, 0.45),
+    0 12px 30px rgba(0, 0, 0, 0.25),
+    inset 0 1px 1px rgba(255, 255, 255, 0.2),
+    inset 0 -3px 8px rgba(0, 0, 0, 0.7);
+  
+  user-select: none;
+}
+
+/* Top Branding & Solar Cell */
+.casio-top-chassis {
+  padding: 0 4px 10px;
+}
+
+.casio-brand-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.casio-logo {
+  font-family: 'Inter', sans-serif;
+  font-size: 1.35rem;
+  font-weight: 900;
+  letter-spacing: 2px;
+  color: #f0f2f5;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.casio-model-badge {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.model-name {
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: 0.5px;
+}
+
+.series-name {
+  font-size: 0.68rem;
+  font-weight: 900;
+  color: #60a5fa;
+  letter-spacing: 1px;
+}
+
+.casio-vpam-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.vpam-text {
+  font-size: 0.58rem;
+  font-style: italic;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #94a3b8;
+}
+
+/* Photovoltaic Solar Panel */
+.casio-solar-cell {
+  display: flex;
+  width: 76px;
+  height: 14px;
+  background: linear-gradient(180deg, #2b1d24 0%, #191217 60%, #3a2732 100%);
+  border: 1px solid #4a3e47;
+  border-radius: 2px;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.8);
+  overflow: hidden;
+}
+
+.solar-grid-line {
+  flex: 1;
+  border-right: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.solar-grid-line:last-child {
+  border-right: none;
+}
+
+/* ==========================================================================
+   AUTHENTIC CASIO HIGH-RES LCD SCREEN
+   ========================================================================== */
+.casio-screen-bezel {
+  margin: 6px 0 10px;
+  padding: 7px;
+  background: #0d0f12;
+  border-radius: 12px;
+  border: 1.5px solid #282d35;
+  box-shadow: 
+    inset 0 3px 6px rgba(0, 0, 0, 0.85),
+    0 1px 2px rgba(255, 255, 255, 0.08);
+}
+
+.casio-screen-frame {
+  position: relative;
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+/* Authentic Dot-Matrix Screen Panel */
+.casio-lcd-panel {
+  position: relative;
+  min-height: 104px;
+  padding: 8px 12px;
+  box-sizing: border-box;
+  
+  /* Natural Casio ClassWiz LCD tint: warm olive-green matrix */
+  background-color: #c4d4be;
+  background-image: 
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, transparent 40%),
+    radial-gradient(rgba(0, 0, 0, 0.04) 15%, transparent 16%);
+  background-size: 100% 100%, 3px 3px;
+  
+  /* LCD Inset shadow for depth */
+  box-shadow: 
+    inset 2px 2px 5px rgba(0, 0, 0, 0.35),
+    inset -1px -1px 3px rgba(255, 255, 255, 0.35);
+  
+  color: #172414;
+  font-family: 'JetBrains Mono', monospace;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+/* Screen Status Indicator Line */
+.lcd-status-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.62rem;
+  font-weight: 800;
+  color: #556650;
+  line-height: 1;
+}
+
+.status-badge {
+  padding: 1px 3px;
+  border-radius: 2px;
+  transition: all 0.1s ease;
+}
+
+.status-badge.badge-off {
+  color: rgba(23, 36, 20, 0.12);
+}
+
+.status-badge.badge-on {
+  background: #172414;
+  color: #c4d4be;
+}
+
+.status-badge.badge-on.red {
+  background: #8b1828;
+  color: #ffffff;
+}
+
+.status-badge.deg-badge {
+  background: transparent;
+  color: #172414;
+  border: 1px solid #172414;
+  font-weight: 900;
+}
+
+.font-serif {
+  font-style: italic;
+  font-weight: 900;
+}
+
+.lcd-replay-arrows {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+  font-size: 0.55rem;
+  color: rgba(23, 36, 20, 0.2);
+}
+
+.lcd-replay-arrows span.arrow-active {
+  color: #172414;
+  font-weight: 900;
+}
+
+/* Mathematical Expression Display Area */
+.lcd-expression-line {
+  margin: 6px 0;
+  font-size: 1.15rem;
+  line-height: 1.35;
+  color: #172414;
+  font-weight: 500;
+  white-space: pre-wrap;
+  word-break: break-all;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  cursor: text;
+}
+
+.lcd-placeholder {
+  color: rgba(23, 36, 20, 0.35);
+  font-size: 0.92rem;
+  font-weight: 400;
+}
+
+.lcd-cursor {
+  display: inline-block;
+  color: #172414;
+  font-weight: 900;
+  animation: blinkCursor 0.9s infinite step-end;
+  vertical-align: middle;
+  line-height: 1;
+}
+
+@keyframes blinkCursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Result Line */
+.lcd-result-line {
+  display: flex;
+  justify-content: flex-end;
+  align-items: baseline;
+  gap: 8px;
+  border-top: 1px dashed rgba(23, 36, 20, 0.25);
+  padding-top: 3px;
+}
+
+.sd-tag {
+  font-size: 0.6rem;
+  font-weight: 800;
+  background: #172414;
+  color: #c4d4be;
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+
+.lcd-result-value {
+  font-size: 1.65rem;
+  font-weight: 700;
+  color: #172414;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+  word-break: break-all;
+}
+
+/* Interactive Helper Ribbon */
+.casio-helper-ribbon {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  padding: 4px 8px;
+  margin-bottom: 8px;
+  font-size: 0.66rem;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+
+.casio-helper-ribbon span {
+  color: #cbd5e1;
+}
+
+/* ==========================================================================
+   AUTHENTIC KEYPAD & 3D SCULPTED BUTTONS
+   ========================================================================== */
+.casio-keypad {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+/* Color Labels on Casing Faceplate */
+.label-gold {
+  color: #f59e0b;
+  font-weight: 800;
+}
+
+.label-red {
+  color: #f43f5e;
+  font-weight: 800;
+}
+
+.label-clear {
+  visibility: hidden;
+}
+
+.key-plate-label {
+  font-size: 0.58rem;
+  text-align: center;
+  line-height: 1;
+  height: 10px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.key-dual-labels {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 2px;
+  font-size: 0.55rem;
+  line-height: 1;
+  height: 10px;
+}
+
+/* Top Navigation Cluster with Replay Wheel */
+.keypad-nav-row {
+  display: grid;
+  grid-template-columns: 86px 1fr 86px;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 2px;
+}
+
+.nav-side-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* The Iconic Metallic Silver REPLAY Wheel */
+.replay-disc-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.replay-metallic-wheel {
+  position: relative;
+  width: 98px;
+  height: 98px;
+  border-radius: 50%;
+  
+  /* Realistic brushed chrome radial gradient */
+  background: radial-gradient(circle at 45% 45%, #ffffff 0%, #e2e8f0 45%, #94a3b8 100%);
+  border: 1.5px solid #cbd5e1;
+  
+  box-shadow: 
+    0 5px 12px rgba(0, 0, 0, 0.5),
+    inset 0 2px 3px rgba(255, 255, 255, 0.9),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.4);
+}
+
+.replay-arrow-btn {
+  position: absolute;
+  border: none;
+  background: transparent;
+  color: #334155;
+  font-size: 0.72rem;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.1s ease;
+  padding: 0;
+}
+
+.replay-arrow-btn:hover {
+  color: #0f172a;
+  transform: scale(1.18);
+}
+
+.replay-arrow-btn:active {
+  transform: scale(0.92);
+}
+
+.replay-arrow-btn.arrow-up {
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 32px;
+  height: 22px;
+}
+.replay-arrow-btn.arrow-up:hover { transform: translateX(-50%) scale(1.18); }
+
+.replay-arrow-btn.arrow-down {
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 32px;
+  height: 22px;
+}
+.replay-arrow-btn.arrow-down:hover { transform: translateX(-50%) scale(1.18); }
+
+.replay-arrow-btn.arrow-left {
+  left: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 32px;
+}
+.replay-arrow-btn.arrow-left:hover { transform: translateY(-50%) scale(1.18); }
+
+.replay-arrow-btn.arrow-right {
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 32px;
+}
+.replay-arrow-btn.arrow-right:hover { transform: translateY(-50%) scale(1.18); }
+
+.replay-center-hub {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 45% 45%, #f1f5f9 0%, #cbd5e1 80%, #94a3b8 100%);
+  border: 1px solid #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.8), 0 2px 4px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+}
+
+.replay-center-hub span {
+  font-size: 0.48rem;
+  font-weight: 900;
+  letter-spacing: 0.8px;
+  color: #475569;
+}
+
+/* Grid Layouts for Key Rows */
+.key-row {
+  display: grid;
+  gap: 5px;
+}
+
+.key-row-6 {
+  grid-template-columns: repeat(6, 1fr);
+}
+
+.key-row-5 {
+  grid-template-columns: repeat(5, 1fr);
+}
+
+.key-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* Base Sculpted 3D Button Style */
+.casio-btn {
+  position: relative;
+  width: 100%;
+  height: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.05s ease, box-shadow 0.05s ease;
+  padding: 0;
+  outline: none;
+}
+
+.casio-btn:active,
+.casio-btn.active-pressed {
+  transform: translateY(2px) !important;
+  box-shadow: 0 0 0 transparent !important;
+}
+
+/* Dark Navigation Buttons */
+.btn-dark {
+  background: linear-gradient(180deg, #383e47 0%, #252930 100%);
+  border-color: #4a515e;
+  box-shadow: 0 3px 0 #13161a, 0 4px 6px rgba(0, 0, 0, 0.35);
+  color: #f1f5f9;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.btn-shift {
+  color: #fbbf24;
+}
+
+.btn-shift.active-pressed {
+  background: linear-gradient(180deg, #b45309 0%, #78350f 100%);
+  color: #fef08a;
+  border-color: #f59e0b;
+}
+
+.btn-on {
+  color: #38bdf8;
+}
+
+/* Scientific Function Keys (Row 2 to 5) */
+.btn-fn {
+  background: linear-gradient(180deg, #333842 0%, #20232a 100%);
+  border-color: #424956;
+  box-shadow: 0 3px 0 #121418, 0 4px 5px rgba(0, 0, 0, 0.3);
+  color: #f8fafc;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.btn-fn:hover {
+  background: linear-gradient(180deg, #3d434f 0%, #282c35 100%);
+}
+
+.text-italic {
+  font-style: italic;
+  font-family: 'Times New Roman', serif;
+  font-size: 0.85rem;
+}
+
+.frac-symbol {
+  font-size: 0.68rem;
+  line-height: 1;
+}
+
+/* Numeric Keys (0-9, dot): Authentic Off-White Keycaps */
+.btn-num {
+  height: 38px;
+  background: linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
+  border-color: #cbd5e1;
+  box-shadow: 0 3px 0 #94a3b8, 0 5px 6px rgba(0, 0, 0, 0.3);
+  color: #0f172a;
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.btn-num:hover {
+  background: linear-gradient(180deg, #ffffff 0%, #ecf0f5 100%);
+}
+
+.btn-num.btn-op {
+  font-size: 1.15rem;
+  color: #1e293b;
+}
+
+/* DEL Key: Slate/Navy keycap */
+.btn-del {
+  height: 38px;
+  background: linear-gradient(180deg, #2b3947 0%, #1e2732 100%);
+  border-color: #3b4d5e;
+  box-shadow: 0 3px 0 #0f151c, 0 5px 6px rgba(0, 0, 0, 0.35);
+  color: #f8fafc;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.btn-del:hover {
+  background: linear-gradient(180deg, #354657 0%, #24303c 100%);
+}
+
+/* AC Key: Authentic Terracotta / Red-Orange */
+.btn-ac {
+  height: 38px;
+  background: linear-gradient(180deg, #a8382b 0%, #7e2318 100%);
+  border-color: #bf4335;
+  box-shadow: 0 3px 0 #4c1109, 0 5px 6px rgba(0, 0, 0, 0.35);
+  color: #ffffff;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.btn-ac:hover {
+  background: linear-gradient(180deg, #b84133 0%, #8d281c 100%);
+}
+
+/* Equal (=) Key */
+.btn-equal {
+  height: 38px;
+  background: linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
+  border-color: #cbd5e1;
+  box-shadow: 0 3px 0 #94a3b8, 0 5px 6px rgba(0, 0, 0, 0.3);
+  color: #0f172a;
+  font-size: 1.35rem;
+  font-weight: 900;
+}
+
+.btn-equal:hover {
+  background: #ffffff;
+}
+
+/* Bottom Chin Accent Curve */
+.casio-bottom-chin {
+  height: 6px;
+  margin-top: 12px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, rgba(0, 0, 0, 0.3) 100%);
+}
+
+/* ==========================================================================
+   SIDEBARS: LEARNING HANDBOOK & COMPANION PANELS
+   ========================================================================== */
+.casio-side-panel {
+  background: #fffdfa;
+  border: 1px solid #e8decb;
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(71, 55, 20, 0.06);
+  overflow: hidden;
+}
+
+/* Tab Navigation */
+.panel-tab-nav {
+  display: flex;
+  border-bottom: 1px solid #ebd9c0;
+  background: #fbf5e8;
+}
+
+.tab-btn {
+  flex: 1;
+  padding: 11px 8px;
+  border: 0;
+  background: transparent;
+  color: #78664b;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+}
+
+.tab-btn:hover {
+  color: #2b2111;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.tab-btn.active {
+  background: #fffdfa;
+  color: #b45309;
+  border-bottom: 2px solid #d97706;
+}
+
+.panel-tab-body {
+  padding: 16px;
+}
+
+/* Guide Cards */
+.guide-card {
+  margin-bottom: 16px;
+}
+
+.guide-card h3 {
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: #2b2111;
+  margin: 0 0 8px;
+}
+
+.guide-card p {
+  font-size: 0.78rem;
+  line-height: 1.55;
+  color: #635238;
+  margin: 0 0 10px;
+}
+
+.quick-guide-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: #4b3e2b;
+}
+
+.tag-gold { color: #d97706; }
+.tag-red { color: #e11d48; }
+.tag-dark { color: #1e293b; }
+
+.shortcut-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 0;
+  border-bottom: 1px dashed #eee3cb;
+  font-size: 0.74rem;
+  color: #554733;
+}
+
+.shortcut-row code {
+  background: #f3ebdb;
+  color: #854d0e;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* History List */
+.history-pane .pane-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.history-pane h3 {
+  font-size: 0.88rem;
+  margin: 0;
+  color: #2b2111;
+}
+
+.clear-history-btn {
+  border: 0;
+  background: transparent;
+  color: #dc2626;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.clear-history-btn:hover {
+  text-decoration: underline;
+}
+
+.empty-history {
+  font-size: 0.78rem;
+  color: #92836b;
+  text-align: center;
+  padding: 24px 0;
+}
+
+.history-items-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 480px;
+  overflow-y: auto;
+}
+
+.history-item button {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 8px 10px;
+  background: #ffffff;
+  border: 1px solid #ebd9c0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  text-align: left;
+}
+
+.history-item button:hover {
+  background: #fbf5e8;
+  border-color: #d97706;
+}
+
+.hist-expr {
+  font-size: 0.78rem;
+  font-family: 'JetBrains Mono', monospace;
+  color: #635238;
+}
+
+.hist-res {
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: #1e293b;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Memory Pane */
+.memory-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: #ffffff;
+  border: 1px solid #ebd9c0;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  font-size: 0.8rem;
+}
+
+.memory-row.highlight strong {
+  color: #b45309;
+  font-size: 0.95rem;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.variables-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin: 12px 0;
+}
+
+.var-chip {
+  background: #ffffff;
+  border: 1px solid #ebd9c0;
+  border-radius: 6px;
+  padding: 6px 4px;
+  text-align: center;
+  font-size: 0.72rem;
+}
+
+.var-chip span {
+  color: #e11d48;
+  font-weight: 800;
+  margin-right: 2px;
+}
+
+.var-chip strong {
+  font-family: 'JetBrains Mono', monospace;
+  color: #1e293b;
+}
+
+.note-text {
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: #78664b;
+  margin-top: 10px;
+}
+
+/* Right Handbook Panel */
+.right-panel {
+  padding: 16px;
+}
+
+.guide-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #ebd9c0;
+}
+
+.guide-header h3 {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #2b2111;
+  margin: 0;
+}
+
+.guide-badge {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #b45309;
+}
+
+.handbook-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 520px;
+  overflow-y: auto;
+}
+
+.handbook-item {
+  border: 1px solid #ebd9c0;
+  border-radius: 8px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.handbook-item summary {
+  padding: 9px 12px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: #3e3220;
+  cursor: pointer;
+  background: #fbf5e8;
+  user-select: none;
+}
+
+.handbook-item summary:hover {
+  color: #b45309;
+}
+
+.handbook-body {
+  padding: 10px 12px;
+  font-size: 0.75rem;
+  line-height: 1.55;
+  color: #554733;
+}
+
+.handbook-body p {
+  margin: 0 0 6px;
+}
+
+.handbook-body p:last-child {
+  margin-bottom: 0;
+}
+
+.key-badge {
+  display: inline-block;
+  padding: 1px 5px;
+  background: #252930;
+  color: #ffffff;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  margin: 0 2px;
+}
+
+.key-badge.gold {
+  background: #d97706;
+  color: #ffffff;
+}
+
+.key-badge.sd-badge {
+  background: #1e293b;
+  color: #67e8f9;
+}
+
+.support-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 12px;
+  background: #fdf6e7;
+  border: 1px solid #ebd9c0;
+  border-radius: 10px;
+  font-size: 0.74rem;
+  line-height: 1.5;
+  color: #635238;
+}
+
+.dot-live {
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+
+/* ==========================================================================
+   RESPONSIVE DESIGN (TABLETS & PHONES)
+   ========================================================================== */
+@media (max-width: 1140px) {
+  .casio-workspace-grid {
+    grid-template-columns: minmax(360px, 420px) minmax(280px, 360px);
+  }
+  .left-panel {
+    display: none;
+  }
+}
+
+@media (max-width: 780px) {
+  .casio-hub-page {
+    padding: 75px 12px 40px;
+  }
+  .casio-header-banner {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+  .casio-workspace-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  .right-panel {
+    order: 2;
+  }
+  .casio-center-stage {
+    order: 1;
+  }
+  .casio-device {
+    max-width: 100%;
+    padding: 16px 12px 20px;
+    border-radius: 22px 22px 28px 28px;
+  }
+  .replay-metallic-wheel {
+    width: 84px;
+    height: 84px;
+  }
+  .replay-center-hub {
+    width: 42px;
+    height: 42px;
+  }
+  .casio-btn {
+    height: 30px;
+    font-size: 0.65rem;
+  }
+  .btn-num, .btn-del, .btn-ac, .btn-equal {
+    height: 35px;
+    font-size: 0.95rem;
+  }
+}

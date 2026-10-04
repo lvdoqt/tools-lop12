@@ -1,7 +1,21 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 
 const ALL_TOOLS = [
+  {
+    id: 'teacher-grading', path: '/giao-vien', category: 'teacher',
+    icon: '✓', iconClass: 'green', title: 'Chấm trắc nghiệm',
+    desc: 'Tạo phiếu trả lời, quét bài làm và chấm điểm trắc nghiệm cho lớp học.',
+    tags: [{ text: 'Giáo viên', cls: 'new' }, { text: 'OMR' }, { text: 'Chấm điểm' }],
+    active: true,
+  },
+  {
+    id: 'casio-580', path: '/may-tinh-casio-580', category: 'calculate',
+    icon: '580', iconClass: 'orange', title: 'Máy tính Casio 580',
+    desc: 'Máy tính khoa học cho học sinh: lượng giác, log, lũy thừa, căn, giai thừa, chỉnh hợp và tổ hợp.',
+    tags: [{ text: 'Mới', cls: 'new' }, { text: 'Khoa học' }, { text: '580' }],
+    active: true,
+  },
   {
     id: 'word-shuffle', path: '/word-shuffle', category: 'edit',
     icon: 'W', iconClass: 'green', title: 'Trộn đề Word',
@@ -65,15 +79,22 @@ const ALL_TOOLS = [
 ];
 
 const CATEGORIES = [
-  { id: 'all', label: '🔥 Tất cả' },
-  { id: 'convert', label: '🔄 Chuyển đổi' },
-  { id: 'edit', label: '✏️ Chỉnh sửa' },
-  { id: 'format', label: '📐 Định dạng' },
+  { id: 'all', label: 'Tất cả công cụ' },
+  { id: 'calculate', label: 'Tính toán' },
+  { id: 'teacher', label: 'Giáo viên & kiểm tra' },
+  { id: 'convert', label: 'Chuyển đổi tài liệu' },
+  { id: 'edit', label: 'Soạn thảo & chỉnh sửa' },
+  { id: 'format', label: 'Định dạng dữ liệu' },
 ];
 
 export default function HomePage() {
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState('all');
+
+  useEffect(() => {
+    if (window.location.hash !== '#danh-sach-cong-cu') return;
+    requestAnimationFrame(() => document.getElementById('danh-sach-cong-cu')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  }, []);
 
   const filteredTools = useMemo(() => {
     return ALL_TOOLS.filter(tool => {
@@ -129,7 +150,7 @@ export default function HomePage() {
       </div>
 
       {/* Category Tabs */}
-      <div className="category-tabs">
+      <div className="category-tabs" id="danh-sach-cong-cu">
         {CATEGORIES.map(cat => (
           <button
             key={cat.id}
