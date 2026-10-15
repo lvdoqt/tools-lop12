@@ -28,6 +28,7 @@ if __package__:
     from .services.quiz_word import validate_quiz, export_quiz
     from .services.word_shuffle import Exam, export_shuffle, MAX_UPLOAD
     from .services.word_math import compile_math
+    from .services.pdf_header import add_pdf_header
 else:
     from services.tikz_renderer import render_tikz
     from services.latex_quiz import parse_quiz
@@ -36,6 +37,7 @@ else:
     from services.quiz_word import validate_quiz, export_quiz
     from services.word_shuffle import Exam, export_shuffle, MAX_UPLOAD
     from services.word_math import compile_math
+    from services.pdf_header import add_pdf_header
 
 MAX_PDF_BYTES = 4 * 1024 * 1024
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -453,6 +455,51 @@ async def pdf_to_png(file: UploadFile = File(...), dpi: int = Form(180)):
             archive.writestr(f"page-{page_number + 1}.png", pixmap.tobytes("png"))
             check_output_size(output.tell())
     return pdf_response(output.getvalue(), "zip", pages)
+
+
+@app.post("/api/pdf-tools/header")
+async def pdf_add_header(
+    file: UploadFile = File(...),
+    text: str = Form(""),
+    align: str = Form("center"),
+    left_text: str | None = Form(None),
+    right_text: str | None = Form(None),
+    font_size: float = Form(10.0),
+    color: str = Form("#333333"),
+    margin_top: float = Form(24.0),
+    margin_x: float = Form(36.0),
+    draw_line: bool = Form(True),
+    line_color: str = Form("#D1D5DB"),
+    pages_mode: str = Form("all"),
+    custom_pages: str | None = Form(None),
+    fill_white_bg: bool = Form(False),
+):
+    content = await read_pdf_upload(file)
+    try:
+        output_bytes, processed_count = await run_in_threadpool(
+            add_pdf_header,
+            content,
+            text=text,
+            align=align,
+            left_text=left_text,
+            right_text=right_text,
+            font_size=font_size,
+            color=color,
+            margin_top=margin_top,
+            margin_x=margin_x,
+            draw_line=draw_line,
+            line_color=line_color,
+            pages_mode=pages_mode,
+            custom_pages=custom_pages,
+            fill_white_bg=fill_white_bg,
+        )
+        return pdf_response(output_bytes, "pdf", processed_count)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except Exception:
+        logger.exception("Failed to add PDF header")
+        raise HTTPException(500, "Không thể gắn header vào PDF. Hãy kiểm tra lại file và thử lại.")
+
 
 
 if __name__ == "__main__":

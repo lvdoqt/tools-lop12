@@ -28,6 +28,24 @@ test('PDF response becomes a usable browser download with metadata', async t => 
   await assert.rejects(originalFetch(result.download_url));
 });
 
+test('PDF header operation sends options and produces renamed PDF download', async t => {
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    assert.equal(url, '/api/pdf-tools/header');
+    assert.equal(options.body.get('text'), 'Header văn bản');
+    assert.equal(options.body.get('align'), 'center');
+    assert.equal(options.body.get('draw_line'), 'true');
+    return new Response('%PDF-header-result', { headers: {
+      'Content-Type': 'application/pdf', 'X-PDF-Pages': '3', 'X-PDF-Files': '1',
+    } });
+  });
+  const file = new File(['pdf-content'], 'De-Toan-12.pdf', { type: 'application/pdf' });
+  const result = await api.pdfTool('header', [file], { text: 'Header văn bản', align: 'center', draw_line: true });
+  assert.equal(result.pages, 3);
+  assert.equal(result.filename, 'De-Toan-12-header.pdf');
+  assert.equal(await (await originalFetch(result.download_url)).text(), '%PDF-header-result');
+  releaseResult(result);
+});
+
 test('TikZ previews and downloads preserve binary and UTF-8 content', async t => {
   const content = { png: Buffer.from([137, 80, 78, 71]), pdf: Buffer.from('%PDF-test'), tex: Buffer.from('Tiếng Việt'), svg: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><text>Tiếng Việt</text></svg>') };
   t.mock.method(globalThis, 'fetch', async url => {

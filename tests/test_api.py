@@ -101,6 +101,37 @@ class ApiTests(unittest.TestCase):
         with zipfile.ZipFile(BytesIO(response.content)) as archive:
             self.assertEqual(len(archive.namelist()), 3)
 
+    def test_pdf_header_success(self):
+        response = self.upload("header", {
+            "text": "ĐỀ THI HỌC KỲ I",
+            "align": "center",
+            "left_text": "SỞ GD&ĐT",
+            "right_text": "Trang {page}/{total}",
+            "draw_line": "true",
+        })
+        self.assertEqual(response.status_code, 200, response.text[:200])
+        self.assertEqual(response.headers["X-PDF-Pages"], "3")
+        self.assertEqual(response.headers["Content-Disposition"], 'attachment; filename="pdf-output.pdf"')
+        with pymupdf.open(stream=response.content, filetype="pdf") as doc:
+            self.assertEqual(doc.page_count, 3)
+            p1_text = doc[0].get_text()
+            self.assertIn("ĐỀ", p1_text)
+            self.assertIn('Trang 1/3', p1_text.replace('\xa0', ' '))
+
+    def test_pdf_header_validation_and_page_modes(self):
+        # Empty text rejected
+        self.assertEqual(self.upload("header", {"text": "   "}).status_code, 400)
+        # Skip first page mode
+        response = self.upload("header", {
+            "text": "Header Test",
+            "pages_mode": "skip_first",
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["X-PDF-Pages"], "2")
+        with pymupdf.open(stream=response.content, filetype="pdf") as doc:
+            self.assertNotIn("Header Test", doc[0].get_text())
+            self.assertIn('Header Test', doc[1].get_text().replace('\xa0', ' '))
+
     def test_png_archive_and_output_limit(self):
         response = self.upload("png", {"dpi": 72})
         self.assertEqual(response.status_code, 200)

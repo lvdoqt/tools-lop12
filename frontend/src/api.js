@@ -48,22 +48,32 @@ export const api = {
     return { output_id: data.output_id, preview_url: downloads.png, pdf_preview_url: downloads.pdf, downloads, objectUrls };
   },
 
-  pdfTool: async (operation, files, dpi = 180, pageRanges = null) => {
+  pdfTool: async (operation, files, dpiOrOptions = 180, pageRanges = null) => {
     validatePdfFiles(files);
     const formData = new FormData();
     if (operation === 'merge') files.forEach(file => formData.append('files', file));
     else formData.append('file', files[0]);
-    if (operation === 'png') formData.append('dpi', String(dpi));
+    if (operation === 'png') formData.append('dpi', String(dpiOrOptions));
     if (operation === 'split' && pageRanges) formData.append('ranges', JSON.stringify(pageRanges));
+    if (operation === 'header') {
+      const opts = typeof dpiOrOptions === 'object' && dpiOrOptions !== null ? dpiOrOptions : {};
+      Object.entries(opts).forEach(([key, val]) => {
+        if (val !== undefined && val !== null) formData.append(key, String(val));
+      });
+    }
     const endpoint = operation === 'split' && pageRanges ? 'split-ranges' : operation;
     const res = await fetch(`${API_BASE}/pdf-tools/${endpoint}`, { method: 'POST', body: formData });
     await checkResponse(res, 'Không thể xử lý PDF.');
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
+    let filename = blob.type === 'application/pdf' ? 'pdf-output.pdf' : 'pdf-output.zip';
+    if (operation === 'header' && files[0]?.name) {
+      filename = files[0].name.replace(/\.pdf$/i, '') + '-header.pdf';
+    }
     return {
       pages: Number(res.headers.get('X-PDF-Pages')),
       files: Number(res.headers.get('X-PDF-Files')),
-      filename: blob.type === 'application/pdf' ? 'pdf-output.pdf' : 'pdf-output.zip',
+      filename,
       download_url: url,
       objectUrls: [url],
     };
