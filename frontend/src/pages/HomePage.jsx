@@ -3,13 +3,6 @@ import { Link } from 'react-router-dom';
 
 const ALL_TOOLS = [
   {
-    id: 'teacher-grading', path: '/giao-vien', category: 'teacher',
-    icon: '✓', iconClass: 'green', title: 'Chấm trắc nghiệm',
-    desc: 'Tạo phiếu trả lời, quét bài làm và chấm điểm trắc nghiệm cho lớp học.',
-    tags: [{ text: 'Giáo viên', cls: 'new' }, { text: 'OMR' }, { text: 'Chấm điểm' }],
-    active: true,
-  },
-  {
     id: 'casio-580', path: '/may-tinh-casio-580', category: 'calculate',
     icon: '580', iconClass: 'orange', title: 'Máy tính Casio 580',
     desc: 'Máy tính khoa học cho học sinh: lượng giác, log, lũy thừa, căn, giai thừa, chỉnh hợp và tổ hợp.',
@@ -81,7 +74,6 @@ const ALL_TOOLS = [
 const CATEGORIES = [
   { id: 'all', label: 'Tất cả công cụ' },
   { id: 'calculate', label: 'Tính toán' },
-  { id: 'teacher', label: 'Giáo viên & kiểm tra' },
   { id: 'convert', label: 'Chuyển đổi tài liệu' },
   { id: 'edit', label: 'Soạn thảo & chỉnh sửa' },
   { id: 'format', label: 'Định dạng dữ liệu' },

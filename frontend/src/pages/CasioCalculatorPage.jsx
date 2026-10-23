@@ -26,11 +26,21 @@ const EXPR_MODES = new Set(['comp', 'cmplx', 'base', 'matrix', 'vector', 'stat',
 const MODE_TAG = { comp: 'COMP', cmplx: 'CMPLX', base: 'BASE', matrix: 'MAT', vector: 'VCT', stat: 'STAT', dist: 'DIST', sheet: 'SHEET', table: 'TABLE', eqn: 'EQN', ineq: 'INEQ', ratio: 'RATIO', verify: 'VERIFY' };
 
 const STAT_TYPES = [
-  ['1var', '1-Biến', 'x'], ['lin', 'A+BX', 'xy'], ['quad', '_+CX²', 'xy'], ['log', 'A+B·ln X', 'xy'], ['exp', 'A·e^(BX)', 'xy'],
-  ['ab', 'A·B^X', 'xy'], ['pow', 'A·X^B', 'xy'], ['inv', 'A+B/X', 'xy'], ['cubic', '_+DX³', 'xy'], ['quart', '_+EX⁴', 'xy'],
+  ['grouped', '1: Ghép nhóm [a; b)', 'grouped'],
+  ['1var', '2: 1-Biến (Đơn)', 'x'],
+  ['lin', '3: A+BX (Hồi quy)', 'xy'],
+  ['quad', '4: _+CX²', 'xy'],
+  ['log', '5: A+B·ln X', 'xy'],
+  ['exp', '6: A·e^(BX)', 'xy'],
+  ['ab', '7: A·B^X', 'xy'],
+  ['pow', '8: A·X^B', 'xy'],
+  ['inv', '9: A+B/X', 'xy'],
+  ['cubic', 'A: _+DX³', 'xy'],
+  ['quart', 'B: _+EX⁴', 'xy'],
 ];
 const EQN_TYPES = [
-  ['sim2', 'Hệ 2 ẩn', 2], ['sim3', 'Hệ 3 ẩn', 3], ['sim4', 'Hệ 4 ẩn', 4], ['poly2', 'Bậc 2', 2], ['poly3', 'Bậc 3', 3], ['poly4', 'Bậc 4', 4],
+  ['sim2', '1: Hệ 2 ẩn', 2], ['sim3', '2: Hệ 3 ẩn', 3], ['sim4', '3: Hệ 4 ẩn', 4],
+  ['poly2', '4: Bậc 2', 2], ['poly3', '5: Bậc 3', 3], ['poly4', '6: Bậc 4', 4],
 ];
 const DIST_DEFS = [
   { id: 'normpd', title: 'Normal PD', f: [['x', 'x', '0'], ['sig', 'σ', '1'], ['mu', 'μ', '0']], run: v => M.normPdf(v.x, v.mu, v.sig) },
@@ -304,24 +314,52 @@ export default function CasioCalculatorPage() {
         }
         setTableRows(rows); setResult({ text: `${rows.length} dòng`, value: null, error: false, lines: null });
       } else if (mode === 'stat') {
-        const cfg = STAT_TYPES.find(t => t[0] === statType); const xs = [], ys = [], fr = [];
-        for (let i = 0; i < statRows; i++) {
-          const rx = (fields[`sx-${i}`] ?? '').trim(); if (rx === '') continue; const x = numField(`sx-${i}`, ctx);
-          const f = setup.freq ? numField(`sf-${i}`, ctx, 1) : 1;
-          if (cfg[2] === 'xy') { const ry = (fields[`sy-${i}`] ?? '').trim(); if (ry === '') continue; ys.push(numField(`sy-${i}`, ctx)); }
-          xs.push(x); fr.push(f);
-        }
-        if (!xs.length) throw new CasioError('No Data'); const lines = []; const f = x => fmtReal(x, setup.fmt); const sv = {};
-        if (cfg[2] === 'x') {
-          const s = M.oneVar(xs, fr);
-          [['n', s.n], ['x̄', s.mean], ['Σx', s.sumX], ['Σx²', s.sumX2], ['σx', s.sigmaX], ['sx', s.sX], ['minX', s.minX], ['Q1', s.Q1], ['Med', s.Med], ['Q3', s.Q3], ['maxX', s.maxX]].forEach(([k, v]) => lines.push(`${k} = ${f(v)}`));
-          Object.assign(sv, { nn: s.n, xbar: s.mean, sumx: s.sumX, sumx2: s.sumX2, sigmax: s.sigmaX, sdx: s.sX, minx: s.minX, maxx: s.maxX, q1: s.Q1, med: s.Med, q3: s.Q3 });
+        const cfg = STAT_TYPES.find(t => t[0] === statType); const lines = []; const f = x => fmtReal(x, setup.fmt); const sv = {};
+        if (cfg[0] === 'grouped') {
+          const lowers = [], uppers = [], freqs = [];
+          for (let i = 0; i < statRows; i++) {
+            const ra = (fields[`sa-${i}`] ?? '').trim();
+            const rb = (fields[`sb-${i}`] ?? '').trim();
+            if (ra === '' && rb === '') continue;
+            if (ra === '' || rb === '') throw new CasioError('Cần nhập đủ cả cận [a; b)');
+            const a = numField(`sa-${i}`, ctx);
+            const b = numField(`sb-${i}`, ctx);
+            const fr = numField(`sf-${i}`, ctx, 1);
+            lowers.push(a); uppers.push(b); freqs.push(fr);
+          }
+          if (!lowers.length) throw new CasioError('No Data');
+          const s = M.groupedStats(lowers, uppers, freqs);
+          [
+            ['n', s.n], ['x̄', s.mean], ['Med', s.Med], ['Q1', s.Q1], ['Q3', s.Q3], ['ΔQ', s.IQR],
+            ['Mo', s.Mo], ['s²', s.varP], ['s', s.sdP], ['s²_hc', isNaN(s.varS) ? '—' : s.varS],
+            ['s_hc', isNaN(s.sdS) ? '—' : s.sdS], ['R', s.R], ['Σx', s.sumX], ['Σx²', s.sumX2]
+          ].forEach(([k, v]) => lines.push(`${k} = ${typeof v === 'number' ? f(v) : v}`));
+          Object.assign(sv, {
+            nn: s.n, xbar: s.mean, med: s.Med, q1: s.Q1, q3: s.Q3, iqr: s.IQR, mo: s.Mo,
+            sigmax: s.sdP, sigmax2: s.varP, sdx: s.sdS, sdx2: s.varS, sumx: s.sumX, sumx2: s.sumX2,
+            minx: s.minA, maxx: s.maxB, r: s.R,
+          });
           setReg(null);
         } else {
-          const s = M.twoVar(xs, ys, fr); const r = M.regression(statType, xs, ys, fr); setReg(r);
-          [['n', s.n], ['x̄', s.meanX], ['ȳ', s.meanY], ['Σx', s.sumX], ['Σx²', s.sumX2], ['Σy', s.sumY], ['Σy²', s.sumY2], ['Σxy', s.sumXY], ['σx', s.sigmaX], ['σy', s.sigmaY], ['sx', s.sX], ['sy', s.sY]].forEach(([k, v]) => lines.push(`${k} = ${f(v)}`));
-          lines.push('— Hồi quy ' + cfg[1] + ' —'); Object.entries(r.coef).forEach(([k, v]) => lines.push(`${k === 'R2' ? 'R²' : k} = ${f(v)}`));
-          Object.assign(sv, { nn: s.n, xbar: s.meanX, ybar: s.meanY, sumx: s.sumX, sumx2: s.sumX2, sumy: s.sumY, sumy2: s.sumY2, sumxy: s.sumXY, sigmax: s.sigmaX, sigmay: s.sigmaY, sdx: s.sX, sdy: s.sY, regA: r.coef.A, regB: r.coef.B, regC: r.coef.C ?? 0, regR: r.coef.r ?? 0 });
+          const xs = [], ys = [], fr = [];
+          for (let i = 0; i < statRows; i++) {
+            const rx = (fields[`sx-${i}`] ?? '').trim(); if (rx === '') continue; const x = numField(`sx-${i}`, ctx);
+            const frVal = setup.freq ? numField(`sf-${i}`, ctx, 1) : 1;
+            if (cfg[2] === 'xy') { const ry = (fields[`sy-${i}`] ?? '').trim(); if (ry === '') continue; ys.push(numField(`sy-${i}`, ctx)); }
+            xs.push(x); fr.push(frVal);
+          }
+          if (!xs.length) throw new CasioError('No Data');
+          if (cfg[2] === 'x') {
+            const s = M.oneVar(xs, fr);
+            [['n', s.n], ['x̄', s.mean], ['Σx', s.sumX], ['Σx²', s.sumX2], ['σx', s.sigmaX], ['sx', s.sX], ['minX', s.minX], ['Q1', s.Q1], ['Med', s.Med], ['Q3', s.Q3], ['maxX', s.maxX]].forEach(([k, v]) => lines.push(`${k} = ${f(v)}`));
+            Object.assign(sv, { nn: s.n, xbar: s.mean, sumx: s.sumX, sumx2: s.sumX2, sigmax: s.sigmaX, sdx: s.sX, minx: s.minX, maxx: s.maxX, q1: s.Q1, med: s.Med, q3: s.Q3 });
+            setReg(null);
+          } else {
+            const s = M.twoVar(xs, ys, fr); const r = M.regression(statType, xs, ys, fr); setReg(r);
+            [['n', s.n], ['x̄', s.meanX], ['ȳ', s.meanY], ['Σx', s.sumX], ['Σx²', s.sumX2], ['Σy', s.sumY], ['Σy²', s.sumY2], ['Σxy', s.sumXY], ['σx', s.sigmaX], ['σy', s.sigmaY], ['sx', s.sX], ['sy', s.sY]].forEach(([k, v]) => lines.push(`${k} = ${f(v)}`));
+            lines.push('— Hồi quy ' + cfg[1] + ' —'); Object.entries(r.coef).forEach(([k, v]) => lines.push(`${k === 'R2' ? 'R²' : k} = ${f(v)}`));
+            Object.assign(sv, { nn: s.n, xbar: s.meanX, ybar: s.meanY, sumx: s.sumX, sumx2: s.sumX2, sumy: s.sumY, sumy2: s.sumY2, sumxy: s.sumXY, sigmax: s.sigmaX, sigmay: s.sigmaY, sdx: s.sX, sdy: s.sY, regA: r.coef.A, regB: r.coef.B, regC: r.coef.C ?? 0, regR: r.coef.r ?? 0 });
+          }
         }
         setStatVars(sv); setResult({ text: lines[0], value: null, error: false, lines });
       } else if (mode === 'sheet') {
@@ -406,7 +444,7 @@ export default function CasioCalculatorPage() {
     if (mode === 'base') return [ins('and', ' and '), ins('or', ' or '), ins('xor', ' xor '), ins('xnor', ' xnor '), ins('Not(', 'not('), ins('Neg(', 'neg('), ins('Shl(', 'shl('), ins('Shr(', 'shr(')];
     if (mode === 'matrix') return [grp('Ma trận', ['MatA', 'MatB', 'MatC', 'MatD'].map(n => ins(n, n))), ins('det(', 'det('), ins('Trn(', 'Trn('), ins('Inv(', 'Inv('), ins('Identity(', 'Identity('), ins('Ref(', 'Ref('), ins('Rref(', 'Rref('), ins('abs(', 'abs('), ...common.slice(0, 1)];
     if (mode === 'vector') return [grp('Vectơ', ['VctA', 'VctB', 'VctC', 'VctD'].map(n => ins(n, n))), ins('Dot(', 'Dot('), ins('Cross(', 'Cross('), ins('Angle(', 'Angle('), ins('UnitV(', 'UnitV('), ins('abs(', 'abs(')];
-    if (mode === 'stat') return [ins('x̄', 'xbar'), ins('ȳ', 'ybar'), ins('σx', 'sigmax'), ins('σy', 'sigmay'), ins('sx', 'sdx'), ins('sy', 'sdy'), ins('n', 'nn'), ins('Σx', 'sumx'), ins('Σx²', 'sumx2'), ins('Σy', 'sumy'), ins('Σxy', 'sumxy'), ins('minX', 'minx'), ins('maxX', 'maxx'), ins('Q1', 'q1'), ins('Med', 'med'), ins('Q3', 'q3'), ins('A (hồi quy)', 'regA'), ins('B (hồi quy)', 'regB'), ins('C (hồi quy)', 'regC'), ins('r', 'regR'), ins('ŷ(', 'yhat('), ins('x̂(', 'xhat('), ...common.slice(0, 1)];
+    if (mode === 'stat') return [ins('x̄', 'xbar'), ins('Med', 'med'), ins('Q1', 'q1'), ins('Q3', 'q3'), ins('ΔQ', 'iqr'), ins('Mo', 'mo'), ins('n', 'nn'), ins('σx', 'sigmax'), ins('s²', 'sigmax2'), ins('sx', 'sdx'), ins('s²_hc', 'sdx2'), ins('Σx', 'sumx'), ins('Σx²', 'sumx2'), ins('minX', 'minx'), ins('maxX', 'maxx'), ins('R', 'r'), ins('ȳ', 'ybar'), ins('σy', 'sigmay'), ins('sy', 'sdy'), ins('Σy', 'sumy'), ins('Σxy', 'sumxy'), ins('A (hồi quy)', 'regA'), ins('B (hồi quy)', 'regB'), ins('C (hồi quy)', 'regC'), ins('r', 'regR'), ins('ŷ(', 'yhat('), ins('x̂(', 'xhat('), ...common.slice(0, 1)];
     if (mode === 'verify') return [ins('=', '='), ...common];
     return common;
   };
@@ -602,22 +640,139 @@ export default function CasioCalculatorPage() {
         {isNum(result.value) && !result.error && <div className="lcd-lines">{Object.entries(BASES).map(([n, b]) => <div key={n}>{n}: {formatValue(result.value, { base: b, fmt: {} }, {})}</div>)}</div>}
       </>);
       case 'stat': {
-        const cfg = STAT_TYPES.find(t => t[0] === statType); const two = cfg[2] === 'xy';
+        const cfg = STAT_TYPES.find(t => t[0] === statType);
+        const isGrouped = statType === 'grouped';
+        const two = cfg[2] === 'xy';
         return (<>
-          <div className="lcd-tabs"><span className="chip">{cfg[1]}</span><button onClick={() => openList('STAT — Loại dữ liệu', STAT_TYPES.map(([k, n]) => ({ label: n, pick: () => { setStatType(k); closeOverlay(); } })), 2)} onMouseDown={e => e.preventDefault()}>Đổi loại</button><button onClick={() => setStatRows(r => r + 5)} onMouseDown={e => e.preventDefault()}>+5 dòng</button><button onClick={computeMode} onMouseDown={e => e.preventDefault()}>Tính ▸</button></div>
-          <div className="lcd-scroll"><table className="lcd-grid"><tbody>
-            <tr><th /><th>x</th>{two && <th>y</th>}{setup.freq && <th>Freq</th>}</tr>
-            {Array.from({ length: statRows }, (_, i) => (<tr key={i}><th>{i + 1}</th><td><Inp id={`sx-${i}`} /></td>{two && <td><Inp id={`sy-${i}`} /></td>}{setup.freq && <td><Inp id={`sf-${i}`} ph="1" /></td>}</tr>))}
-          </tbody></table></div>{out}{exprBlock}
+          <div className="lcd-tabs">
+            <span className="chip">{cfg[1]}</span>
+            <button onClick={() => openList('STAT — Loại dữ liệu', STAT_TYPES.map(([k, n]) => ({ label: n, pick: () => { setStatType(k); setResult({ text: '', value: null, error: false, lines: null }); closeOverlay(); } })), 2)} onMouseDown={e => e.preventDefault()}>Đổi loại</button>
+            <button onClick={() => setStatRows(r => r + 5)} onMouseDown={e => e.preventDefault()}>+5 dòng</button>
+            <button onClick={computeMode} onMouseDown={e => e.preventDefault()}>Tính ▸</button>
+          </div>
+          <div className="lcd-scroll stat-scroll">
+            <table className="lcd-grid stat-grid">
+              <thead>
+                {isGrouped ? (
+                  <tr>
+                    <th className="th-idx">#</th>
+                    <th>[a Cận dưới</th>
+                    <th>b) Cận trên</th>
+                    <th>Tần số m</th>
+                  </tr>
+                ) : (
+                  <tr>
+                    <th className="th-idx">#</th>
+                    <th>x</th>
+                    {two && <th>y</th>}
+                    {setup.freq && <th>Freq</th>}
+                  </tr>
+                )}
+              </thead>
+              <tbody>
+                {isGrouped ? (
+                  Array.from({ length: statRows }, (_, i) => (
+                    <tr key={i}>
+                      <th className="th-idx">{i + 1}</th>
+                      <td><Inp id={`sa-${i}`} ph="a" /></td>
+                      <td><Inp id={`sb-${i}`} ph="b" /></td>
+                      <td><Inp id={`sf-${i}`} ph="1" /></td>
+                    </tr>
+                  ))
+                ) : (
+                  Array.from({ length: statRows }, (_, i) => (
+                    <tr key={i}>
+                      <th className="th-idx">{i + 1}</th>
+                      <td><Inp id={`sx-${i}`} /></td>
+                      {two && <td><Inp id={`sy-${i}`} /></td>}
+                      {setup.freq && <td><Inp id={`sf-${i}`} ph="1" /></td>}
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+          {result.lines && (
+            <div className="lcd-lines stat-result-lines">
+              <div className="stat-res-header">
+                <span>KẾT QUẢ {isGrouped ? 'GHÉP NHÓM' : 'THỐNG KÊ'}</span>
+                <button onClick={() => setResult(r => ({ ...r, lines: null }))} onMouseDown={e => e.preventDefault()}>Ẩn</button>
+              </div>
+              <div className="stat-res-scroll">
+                {result.lines.map((l, i) => (
+                  <div key={i} className="stat-res-row">{l}</div>
+                ))}
+              </div>
+            </div>
+          )}
+          {result.error && <div className="lcd-lines is-error">{result.text}</div>}
+          {exprBlock}
         </>);
       }
       case 'eqn': {
-        const [, , n] = EQN_TYPES.find(t => t[0] === eqnType); const sim = eqnType.startsWith('sim');
+        const [, , n] = EQN_TYPES.find(t => t[0] === eqnType);
+        const sim = eqnType.startsWith('sim');
+        const varNames = ['x', 'y', 'z', 't'];
+        const hasSolution = result.lines && !result.error && result.lines.length > 0;
         return (<>
-          <div className="lcd-tabs"><span className="chip">{EQN_TYPES.find(t => t[0] === eqnType)[1]}</span><button onClick={() => switchMode('eqn')} onMouseDown={e => e.preventDefault()}>Đổi loại</button><button onClick={computeMode} onMouseDown={e => e.preventDefault()}>Giải ▸</button></div>
-          {sim ? (<table className="lcd-grid"><tbody>{Array.from({ length: n }, (_, i) => (<tr key={i}>{Array.from({ length: n + 1 }, (_, j) => (<td key={j}><Inp id={`e-${i}-${j}`} ph={j < n ? ['a', 'b', 'c', 'd'][j] : 'k'} /></td>))}</tr>))}</tbody></table>)
-            : (<div className="lcd-poly">{Array.from({ length: n + 1 }, (_, i) => (<label key={i}><Inp id={`p-${i}`} ph={'abcde'[i]} /><span>{n - i > 1 ? `x${'⁰¹²³⁴'[n - i]}` : n - i === 1 ? 'x' : ''}{i < n ? ' +' : ' = 0'}</span></label>))}</div>)}
-          {out}
+          <div className="lcd-tabs">
+            <span className="chip">{EQN_TYPES.find(t => t[0] === eqnType)[1]}</span>
+            <button onClick={() => switchMode('eqn')} onMouseDown={e => e.preventDefault()}>Đổi loại</button>
+            <button onClick={computeMode} onMouseDown={e => e.preventDefault()}>Giải ▸</button>
+            {hasSolution && (
+              <button className="on" onClick={() => setResult(r => ({ ...r, lines: null }))} onMouseDown={e => e.preventDefault()}>✏️ Sửa hệ số</button>
+            )}
+          </div>
+          {hasSolution ? (
+            <div className="lcd-eqn-solution-view">
+              <div className="eqn-sol-title">
+                <span>✓ NGHIỆM {sim ? 'HỆ PHƯƠNG TRÌNH' : 'PHƯƠNG TRÌNH'}:</span>
+              </div>
+              <div className="eqn-sol-list">
+                {result.lines.map((l, i) => (
+                  <div key={i} className="eqn-sol-item">{l}</div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            sim ? (
+              <div className="lcd-scroll eqn-matrix-scroll">
+                <table className="lcd-grid eqn-grid">
+                  <thead>
+                    <tr>
+                      <th className="th-idx">#</th>
+                      {Array.from({ length: n }, (_, j) => (
+                        <th key={j} className="th-var">{varNames[j]}</th>
+                      ))}
+                      <th className="th-const">= const</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Array.from({ length: n }, (_, i) => (
+                      <tr key={i}>
+                        <th className="th-idx">{i + 1}</th>
+                        {Array.from({ length: n + 1 }, (_, j) => (
+                          <td key={j} className={j === n ? 'td-const' : ''}>
+                            <Inp id={`e-${i}-${j}`} ph={j < n ? ['a', 'b', 'c', 'd'][j] : 'k'} />
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="lcd-poly">
+                {Array.from({ length: n + 1 }, (_, i) => (
+                  <label key={i}>
+                    <Inp id={`p-${i}`} ph={'abcde'[i]} />
+                    <span>{n - i > 1 ? `x${'⁰¹²³⁴'[n - i]}` : n - i === 1 ? 'x' : ''}{i < n ? ' +' : ' = 0'}</span>
+                  </label>
+                ))}
+              </div>
+            )
+          )}
+          {result.error && <div className="lcd-lines big is-error">{result.text}</div>}
         </>);
       }
       case 'ineq': return (<>
@@ -701,7 +856,7 @@ export default function CasioCalculatorPage() {
               <div className="casio-brand-row"><div className="casio-logo">CASIO</div><div className="casio-model-badge"><span className="model-name">fx-580VN X</span><span className="series-name">CLASSWIZ</span></div></div>
               <div className="casio-vpam-row"><span className="vpam-text">NATURAL-V.P.A.M.</span><div className="casio-solar-cell"><div className="solar-grid-line" /><div className="solar-grid-line" /><div className="solar-grid-line" /></div></div>
             </div>
-            <div className="casio-screen-bezel"><div className="casio-screen-frame"><div className={`casio-lcd-panel ${EXPR_MODES.has(mode) ? '' : 'tall'}`}>
+            <div className="casio-screen-bezel"><div className="casio-screen-frame"><div className={`casio-lcd-panel ${['comp', 'cmplx', 'base', 'verify'].includes(mode) ? '' : 'tall'}`}>
               {power && (<div className="lcd-status-line">
                 <span className={`status-badge ${shift ? 'badge-on' : 'badge-off'}`}>S</span><span className={`status-badge ${alpha ? 'badge-on red' : 'badge-off'}`}>A</span>
                 <span className={`status-badge ${hyp ? 'badge-on' : 'badge-off'}`}>hyp</span><span className={`status-badge ${vars.M !== 0 ? 'badge-on' : 'badge-off'}`}>M</span><span className={`status-badge ${sto ? 'badge-on' : 'badge-off'}`}>STO</span>
@@ -738,13 +893,14 @@ export default function CasioCalculatorPage() {
           <div className="handbook-content">
             {[
               ['1. Phân số, căn, π (MathO)', <><p>• <span className="key-badge">■/□</span> nhập phân số; <span className="key-badge">S⇔D</span> đổi giữa <code>√2, 3/4, π/2</code> và số thập phân.</p><p>• <code>√8</code> → <code>2√2</code>; <code>sin(30)</code> → <code>1/2</code>.</p></>],
-              ['2. Giải phương trình (SOLVE)', <><p>• Gõ <code>x^2=4</code> hoặc <code>2x+3=11</code> → <span className="key-badge gold">SHIFT</span>+<span className="key-badge">CALC</span>.</p><p>• Chế độ <b>A</b> (EQN): hệ 2–4 ẩn, đa thức bậc 2–4, nghiệm phức.</p></>],
-              ['3. CALC: thay giá trị biến', <div key="calc-guide"><p>• Gõ <code>A*x^2+B</code> → <span className="key-badge">CALC</span> → nhập A, B, x → <span className="key-badge">=</span>. Lặp lại để đổi giá trị.</p></div>],
-              ['4. Tích phân, đạo hàm, Σ', <><p>• <code>int(x^2,0,3)</code> = 9, <code>diff(x^3,2)</code> = 12.</p><p>• <code>sum(k^2,k,1,10)</code> = 385 (SHIFT + log▫).</p></>],
-              ['5. Số phức / Ma trận / Vectơ', <><p>• MENU ▸ 2: <code>(1+2i)(3-i)</code>, Arg, Conjg, ∠.</p><p>• MENU ▸ 4/5: nhập MatA… rồi <code>MatA*MatB</code>, <code>det(MatA)</code>, <code>Dot(VctA,VctB)</code>.</p></>],
-              ['6. Thống kê & Phân phối', <><p>• MENU ▸ 6: nhập dữ liệu → <b>Tính</b> → x̄, σ, Q1, Med, Q3, hồi quy A, B, r.</p><p>• MENU ▸ 7: Normal / Binomial / Poisson (PD, CD, Inverse).</p></>],
-              ['7. Đổi cơ số, nCr, nPr, FACT', <><p>• MENU ▸ 3: DEC/HEX/BIN/OCT và and/or/xor.</p><p>• <span className="key-badge gold">SHIFT</span>+<span className="key-badge">÷</span> = nCr; <span className="key-badge gold">SHIFT</span>+<span className="key-badge">×</span> = nPr; <b>FACT</b> phân tích thừa số nguyên tố.</p></>],
-            ].map(([t, c], i) => (<details key={t} className="handbook-item" open={i < 2}><summary>{t}</summary><div className="handbook-body">{c}</div></details>))}
+              ['2. Giải hệ phương trình & Phương trình (EQN)', <><p>• MENU ▸ A: Chọn <b>Hệ 2–4 ẩn</b>. Khung nhập hệ số ma trận nhỏ gọn, hiển thị rõ cột <code>x, y, z, =</code> không bị tràn hay che màn hình. Bấm <b>Giải ▸</b> để xem nghiệm, bấm <b>✏️ Sửa hệ số</b> để hiệu chỉnh.</p><p>• Giải đa thức bậc 2–4: nhập hệ số a, b, c... giải nghiệm thực và phức.</p></>],
+              ['3. Thống kê ghép nhóm (chuẩn Vinacal 680 / SGK mới)', <><p>• MENU ▸ 6: Chọn <b>1: Ghép nhóm [a; b)</b>.</p><p>• Nhập các khoảng <code>[a; b)</code> và tần số <code>m</code>. Bấm <b>Tính ▸</b> xem đầy đủ: cỡ mẫu n, số trung bình x̄, trung vị Med, tứ phân vị Q1, Q3, khoảng tứ phân vị ΔQ, mốt ghép nhóm Mo, phương sai s², độ lệch chuẩn s.</p><p>• Hỗ trợ cả thống kê 1-Biến đơn và hồi quy 2-Biến (A+BX, _+CX²...).</p></>],
+              ['4. CALC & SOLVE', <div key="calc-guide"><p>• Gõ <code>A*x^2+B</code> → <span className="key-badge">CALC</span> → nhập A, B, x → <span className="key-badge">=</span>.</p><p>• Gõ phương trình <code>2x+3=11</code> → <span className="key-badge gold">SHIFT</span>+<span className="key-badge">CALC</span> (SOLVE) để dò nghiệm.</p></div>],
+              ['5. Tích phân, đạo hàm, Σ', <><p>• <code>int(x^2,0,3)</code> = 9, <code>diff(x^3,2)</code> = 12.</p><p>• <code>sum(k^2,k,1,10)</code> = 385 (SHIFT + log▫).</p></>],
+              ['6. Số phức / Ma trận / Vectơ', <><p>• MENU ▸ 2: <code>(1+2i)(3-i)</code>, Arg, Conjg, ∠.</p><p>• MENU ▸ 4/5: nhập MatA… rồi <code>MatA*MatB</code>, <code>det(MatA)</code>, <code>Dot(VctA,VctB)</code>.</p></>],
+              ['7. Phân phối xác suất (DIST)', <><p>• MENU ▸ 7: Normal / Binomial / Poisson (PD, CD, Inverse).</p></>],
+              ['8. Đổi cơ số, nCr, nPr, FACT', <><p>• MENU ▸ 3: DEC/HEX/BIN/OCT và and/or/xor.</p><p>• <span className="key-badge gold">SHIFT</span>+<span className="key-badge">÷</span> = nCr; <span className="key-badge gold">SHIFT</span>+<span className="key-badge">×</span> = nPr; <b>FACT</b> phân tích thừa số nguyên tố.</p></>],
+            ].map(([t, c], i) => (<details key={t} className="handbook-item" open={i < 3}><summary>{t}</summary><div className="handbook-body">{c}</div></details>))}
           </div>
           <div className="support-box"><span className="dot-live" /><div><strong>Bàn phím tương tác 100%</strong><p>Bấm chuột trên máy hoặc gõ bàn phím. Trong các bảng nhập liệu, phím trên máy sẽ ghi vào ô đang chọn.</p></div></div>
         </aside>

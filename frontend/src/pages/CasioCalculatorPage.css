@@ -459,6 +459,529 @@
   word-break: break-all;
 }
 
+/* Tall Screen Mode for Equations, Tables & Statistics */
+.casio-lcd-panel.tall {
+  min-height: 185px;
+  max-height: 245px;
+}
+
+/* Inner Body of LCD Screen */
+.lcd-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  margin-top: 2px;
+}
+
+/* Authentic Dot-Matrix Input Field */
+.lcd-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 22px;
+  padding: 1px 4px;
+  background: rgba(23, 36, 20, 0.08);
+  border: 1px solid rgba(23, 36, 20, 0.3);
+  border-radius: 3px;
+  color: #172414;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-align: right;
+  outline: none;
+  transition: all 0.12s ease;
+}
+
+.lcd-input::placeholder {
+  color: rgba(23, 36, 20, 0.4);
+  font-weight: 500;
+  font-size: 0.7rem;
+  text-align: center;
+}
+
+.lcd-input:focus,
+.lcd-input.is-active {
+  background: #f0f7ee;
+  border-color: #172414;
+  box-shadow: 0 0 0 1.5px rgba(23, 36, 20, 0.75), inset 0 1px 2px rgba(0, 0, 0, 0.12);
+  color: #0c1809;
+  font-weight: 800;
+}
+
+/* LCD Tabs / Header Toolbar */
+.lcd-tabs {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 0 4px;
+  border-bottom: 1px solid rgba(23, 36, 20, 0.22);
+  margin-bottom: 3px;
+  flex-wrap: wrap;
+}
+
+.lcd-tabs button {
+  background: #172414;
+  color: #c4d4be;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  line-height: 1.2;
+}
+
+.lcd-tabs button:hover {
+  background: #283e23;
+  color: #ffffff;
+}
+
+.lcd-tabs button.on {
+  background: #b45309;
+  color: #ffffff;
+}
+
+.lcd-tabs .chip {
+  background: rgba(23, 36, 20, 0.15);
+  color: #172414;
+  border: 1px solid rgba(23, 36, 20, 0.35);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.lcd-tabs .dims {
+  font-size: 0.62rem;
+  color: #4b5f47;
+  font-weight: 600;
+  margin-left: auto;
+}
+
+.lcd-tabs .dims input {
+  width: 32px;
+  font-size: 0.68rem;
+  padding: 1px;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid #7a8b75;
+  border-radius: 2px;
+  text-align: center;
+}
+
+/* Scroll Containers in LCD */
+.lcd-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: auto;
+  min-height: 0;
+  max-height: 135px;
+  margin: 2px 0;
+  padding: 1px;
+  border: 1px solid rgba(23, 36, 20, 0.2);
+  border-radius: 4px;
+  background: rgba(23, 36, 20, 0.03);
+}
+
+.lcd-scroll.short {
+  max-height: 85px;
+}
+
+.lcd-scroll::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.lcd-scroll::-webkit-scrollbar-thumb {
+  background: rgba(23, 36, 20, 0.4);
+  border-radius: 2px;
+}
+
+.lcd-scroll::-webkit-scrollbar-track {
+  background: rgba(23, 36, 20, 0.06);
+}
+
+/* Grid & Tables in LCD */
+table.lcd-grid {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 0.72rem;
+}
+
+table.lcd-grid th {
+  background: rgba(23, 36, 20, 0.12);
+  color: #172414;
+  font-weight: 800;
+  font-size: 0.65rem;
+  padding: 3px 2px;
+  text-align: center;
+  border: 1px solid rgba(23, 36, 20, 0.2);
+  white-space: nowrap;
+}
+
+table.lcd-grid td {
+  padding: 2px;
+  border: 1px solid rgba(23, 36, 20, 0.15);
+  vertical-align: middle;
+}
+
+table.lcd-grid th.th-idx,
+table.lcd-grid th:first-child {
+  width: 22px;
+  color: #556650;
+  font-weight: 700;
+}
+
+/* Equation Simultaneous Matrix */
+.eqn-matrix-scroll {
+  max-height: 135px;
+}
+
+table.eqn-grid {
+  table-layout: fixed;
+  width: 100%;
+}
+
+table.eqn-grid th.th-var {
+  color: #172414;
+  font-weight: 900;
+}
+
+table.eqn-grid th.th-const {
+  background: rgba(23, 36, 20, 0.22);
+  color: #172414;
+  font-weight: 900;
+  border-left: 2px solid rgba(23, 36, 20, 0.45);
+}
+
+table.eqn-grid td.td-const {
+  background: rgba(23, 36, 20, 0.05);
+  border-left: 2px solid rgba(23, 36, 20, 0.45);
+}
+
+table.eqn-grid .lcd-input {
+  height: 22px;
+  padding: 1px 3px;
+  font-size: 0.74rem;
+}
+
+/* Equation Solution View */
+.lcd-eqn-solution-view {
+  background: rgba(23, 36, 20, 0.07);
+  border: 1.5px solid rgba(23, 36, 20, 0.35);
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin: 3px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.eqn-sol-title {
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: #172414;
+  letter-spacing: 0.04em;
+  border-bottom: 1px dashed rgba(23, 36, 20, 0.3);
+  padding-bottom: 3px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.eqn-sol-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.eqn-sol-item {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #0d1a0a;
+  font-family: 'JetBrains Mono', monospace;
+  padding: 3px 8px;
+  background: rgba(255, 255, 255, 0.35);
+  border-radius: 4px;
+  border: 1px solid rgba(23, 36, 20, 0.15);
+}
+
+/* Polynomial Input Form */
+.lcd-poly {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 4px;
+  background: rgba(23, 36, 20, 0.04);
+  border-radius: 6px;
+  margin: 3px 0;
+}
+
+.lcd-poly label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #172414;
+}
+
+.lcd-poly label .lcd-input {
+  width: 44px;
+  height: 22px;
+  text-align: center;
+}
+
+.lcd-poly span {
+  font-weight: 800;
+  font-size: 0.78rem;
+}
+
+.lcd-poly.col {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 5px;
+}
+
+.lcd-poly.col label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.lcd-poly.col label .lcd-input {
+  width: 120px;
+  text-align: right;
+}
+
+.lcd-poly.ratio {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.lcd-poly.ratio .lcd-input {
+  width: 50px;
+}
+
+/* Statistics Grid & Results */
+table.stat-grid {
+  table-layout: fixed;
+  width: 100%;
+}
+
+table.stat-grid th {
+  font-size: 0.65rem;
+  padding: 3px 2px;
+}
+
+table.stat-grid .lcd-input {
+  height: 22px;
+  padding: 1px 3px;
+  font-size: 0.74rem;
+}
+
+.stat-result-lines {
+  background: rgba(23, 36, 20, 0.08);
+  border: 1px solid rgba(23, 36, 20, 0.28);
+  border-radius: 4px;
+  padding: 4px 6px;
+  margin-top: 3px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.stat-res-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.68rem;
+  font-weight: 800;
+  border-bottom: 1px dashed rgba(23, 36, 20, 0.3);
+  padding-bottom: 2px;
+}
+
+.stat-res-header button {
+  background: transparent;
+  border: none;
+  font-size: 0.62rem;
+  color: #b45309;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+}
+
+.stat-res-scroll {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 8px;
+  max-height: 105px;
+  overflow-y: auto;
+}
+
+.stat-res-row {
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 1px 4px;
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 2px;
+  font-family: 'JetBrains Mono', monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* General Multiline Output in LCD */
+.lcd-lines {
+  margin-top: 3px;
+  padding: 4px 6px;
+  background: rgba(23, 36, 20, 0.06);
+  border: 1px solid rgba(23, 36, 20, 0.2);
+  border-radius: 4px;
+  font-size: 0.78rem;
+  color: #172414;
+  font-weight: 700;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.lcd-lines.big {
+  font-size: 0.88rem;
+  font-weight: 800;
+  padding: 6px 8px;
+  background: rgba(23, 36, 20, 0.08);
+}
+
+.lcd-lines.is-error,
+.lcd-lines .is-error {
+  color: #8b1828;
+}
+
+/* CALC Prompt Box */
+.calc-prompt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  background: rgba(23, 36, 20, 0.08);
+  border-radius: 4px;
+  padding: 4px 6px;
+  margin: 3px 0;
+}
+
+.calc-prompt label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.calc-prompt label .lcd-input {
+  width: 50px;
+}
+
+.calc-prompt small {
+  font-size: 0.65rem;
+  color: #556650;
+  margin-left: auto;
+}
+
+/* Spreadsheet Cell & Readonly Grids */
+.sheet-cell {
+  position: relative;
+}
+
+.sheet-cell em {
+  font-size: 0.62rem;
+  font-style: normal;
+  display: block;
+  color: #4b5f47;
+}
+
+.sheet-cell em.bad {
+  color: #8b1828;
+}
+
+table.lcd-grid.readonly td {
+  padding: 2px 4px;
+}
+
+/* Menu & Setup Overlays on LCD */
+.lcd-overlay {
+  position: absolute;
+  inset: 0;
+  background: #c4d4be;
+  z-index: 20;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+}
+
+.lcd-ov-title {
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #172414;
+  border-bottom: 1.5px solid #172414;
+  padding-bottom: 3px;
+  letter-spacing: 0.03em;
+}
+
+.lcd-ov-grid {
+  display: grid;
+  gap: 4px;
+}
+
+.lcd-ov-grid.cols-1 { grid-template-columns: 1fr; }
+.lcd-ov-grid.cols-2 { grid-template-columns: 1fr 1fr; }
+.lcd-ov-grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+.lcd-ov-grid.cols-5 { grid-template-columns: repeat(5, 1fr); }
+
+.lcd-ov-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  background: rgba(23, 36, 20, 0.08);
+  border: 1px solid rgba(23, 36, 20, 0.25);
+  border-radius: 4px;
+  color: #172414;
+  font-family: inherit;
+  font-size: 0.68rem;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.1s ease;
+}
+
+.lcd-ov-item:hover {
+  background: #172414;
+  color: #c4d4be;
+}
+
+.lcd-ov-item i {
+  font-style: normal;
+  font-weight: 900;
+  color: #8b1828;
+}
+
 /* Interactive Helper Ribbon */
 .casio-helper-ribbon {
   background: rgba(0, 0, 0, 0.25);

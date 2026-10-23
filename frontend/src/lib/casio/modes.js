@@ -88,6 +88,90 @@ export function oneVar(xs, freqs) {
   };
 }
 
+export function groupedStats(lowers, uppers, freqs) {
+  const items = [];
+  for (let i = 0; i < lowers.length; i++) {
+    const a = lowers[i], b = uppers[i], f = freqs ? freqs[i] : 1;
+    if (a == null || b == null || isNaN(a) || isNaN(b) || isNaN(f)) continue;
+    if (b <= a) bad('Cận trên phải > cận dưới');
+    if (f < 0) bad('Tần số phải ≥ 0');
+    if (f === 0) continue;
+    const c = (a + b) / 2;
+    items.push({ a, b, c, f, h: b - a });
+  }
+  if (!items.length) bad('No Data');
+
+  items.sort((p, q) => p.a - q.a);
+  const n = sum(items.map(it => it.f));
+  if (n === 0) bad('No Data');
+
+  const sx = sum(items.map(it => it.c * it.f));
+  const sx2 = sum(items.map(it => it.c * it.c * it.f));
+  const mean = sx / n;
+  const pv = sx2 / n - mean * mean;
+  const s2 = Math.max(0, pv);
+  const s = Math.sqrt(s2);
+  const s2_hc = n > 1 ? Math.max(0, (sx2 - n * mean * mean) / (n - 1)) : NaN;
+  const s_hc = n > 1 ? Math.sqrt(s2_hc) : NaN;
+
+  const cf = [];
+  let accum = 0;
+  for (let i = 0; i < items.length; i++) {
+    accum += items[i].f;
+    cf.push(accum);
+  }
+
+  const calcQuantile = (target) => {
+    let p = items.findIndex((_, idx) => cf[idx] >= target - 1e-12);
+    if (p === -1) p = items.length - 1;
+    const it = items[p];
+    const prevCf = p > 0 ? cf[p - 1] : 0;
+    return it.a + ((target - prevCf) / it.f) * it.h;
+  };
+
+  const Q1 = calcQuantile(0.25 * n);
+  const Med = calcQuantile(0.5 * n);
+  const Q3 = calcQuantile(0.75 * n);
+  const IQR = Q3 - Q1;
+
+  let maxF = -1, modeIdx = 0;
+  items.forEach((it, idx) => {
+    if (it.f > maxF) { maxF = it.f; modeIdx = idx; }
+  });
+  const mIt = items[modeIdx];
+  const mPrev = modeIdx > 0 ? items[modeIdx - 1].f : 0;
+  const mNext = modeIdx < items.length - 1 ? items[modeIdx + 1].f : 0;
+  const d1 = mIt.f - mPrev;
+  const d2 = mIt.f - mNext;
+  let Mo = mIt.c;
+  if (d1 + d2 > 0) {
+    Mo = mIt.a + (d1 / (d1 + d2)) * mIt.h;
+  }
+
+  const minA = items[0].a;
+  const maxB = items[items.length - 1].b;
+  const R = maxB - minA;
+
+  return {
+    n,
+    mean: clean(mean),
+    Med: clean(Med),
+    Q1: clean(Q1),
+    Q3: clean(Q3),
+    IQR: clean(IQR),
+    Mo: clean(Mo),
+    varP: clean(s2),
+    sdP: clean(s),
+    varS: isNaN(s2_hc) ? NaN : clean(s2_hc),
+    sdS: isNaN(s_hc) ? NaN : clean(s_hc),
+    sumX: clean(sx),
+    sumX2: clean(sx2),
+    R: clean(R),
+    minA: clean(minA),
+    maxB: clean(maxB),
+  };
+}
+
 const REG = {
   lin: { name: 'A+BX', terms: 2 }, quad: { name: '_+CX²', terms: 3 }, cubic: { name: '_+DX³', terms: 4 }, quart: { name: '_+EX⁴', terms: 5 },
   log: { name: 'A+B·ln X', terms: 2 }, exp: { name: 'A·e^(BX)', terms: 2 }, ab: { name: 'A·B^X', terms: 2 },
