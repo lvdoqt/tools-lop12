@@ -10,58 +10,204 @@ import {
   Trash2,
   Eye,
   Settings,
-  HelpCircle,
   FileText,
   RotateCcw,
   Zap,
-  ArrowRight,
+  Plus,
+  Cloud,
+  CloudUpload,
+  CloudDownload,
+  Edit2,
+  Check,
   ChevronDown
 } from 'lucide-react';
 import { api } from '../api';
 import './GradePage.css';
 
-const STORAGE_SUBMISSIONS_KEY = 'exam_submissions_2025';
-const STORAGE_KEYS_KEY = 'exam_answer_keys_2025';
-const STORAGE_CONFIG_KEY = 'exam_config_2025';
+const STORAGE_EXAMS_KEY = 'grade_exams_list_v2';
+const STORAGE_CURRENT_EXAM_ID_KEY = 'grade_current_exam_id_v2';
+
+const DEFAULT_EXAM = {
+  id: 'default-exam',
+  title: 'Toán 12 — Kiểm tra trắc nghiệm 2025',
+  sheet_type: '2025_math',
+  config: { maxP1: 12, maxP2: 4, maxP3: 6 },
+  answer_keys: {},
+  submissions: [],
+  updated_at: new Date().toISOString(),
+};
 
 export default function GradePage() {
   const [activeTab, setActiveTab] = useState('scan');
-  const [examTitle, setExamTitle] = useState('Toán 12 — Trắc nghiệm 2025');
 
-  // Configuration: Default is MoET Math (12 MCQ, 4 TF, 6 Short Answer)
-  const [config, setConfig] = useState(() => {
+  // Exams List Management
+  const [exams, setExams] = useState(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_CONFIG_KEY);
-      return saved ? JSON.parse(saved) : { maxP1: 12, maxP2: 4, maxP3: 6 };
+      const saved = localStorage.getItem(STORAGE_EXAMS_KEY);
+      if (saved) {
+        const list = JSON.parse(saved);
+        if (Array.isArray(list) && list.length > 0) return list;
+      }
     } catch {
-      return { maxP1: 12, maxP2: 4, maxP3: 6 };
+      // fallback
     }
+    return [DEFAULT_EXAM];
   });
 
-  // Answer Keys: { "101": { part1: {...}, part2: {...}, part3: {...} } }
-  const [answerKeys, setAnswerKeys] = useState(() => {
+  const [currentExamId, setCurrentExamId] = useState(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEYS_KEY);
-      if (saved) return JSON.parse(saved);
-
-      // Check if word-shuffle left any answer keys in localStorage
-      const wsSaved = localStorage.getItem('word_shuffle_exam_answers');
-      if (wsSaved) return JSON.parse(wsSaved);
-      return {};
+      const savedId = localStorage.getItem(STORAGE_CURRENT_EXAM_ID_KEY);
+      if (savedId && exams.some(e => e.id === savedId)) return savedId;
     } catch {
-      return {};
+      // fallback
     }
+    return exams[0]?.id || DEFAULT_EXAM.id;
   });
 
-  // Submissions list
-  const [submissions, setSubmissions] = useState(() => {
+  // Current active exam object
+  const currentExam = useMemo(() => {
+    return exams.find(e => e.id === currentExamId) || exams[0] || DEFAULT_EXAM;
+  }, [exams, currentExamId]);
+
+  // Quick edit title state
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editTitleVal, setEditTitleVal] = useState(currentExam.title);
+
+  // Cloud sync status message
+  const [cloudStatus, setCloudStatus] = useState(null);
+
+  // Save exams list to localStorage
+  useEffect(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_SUBMISSIONS_KEY);
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
+      localStorage.setItem(STORAGE_EXAMS_KEY, JSON.stringify(exams));
+      localStorage.setItem(STORAGE_CURRENT_EXAM_ID_KEY, currentExamId);
+    } catch (e) {
+      console.warn('Could not save exams to localStorage:', e);
     }
-  });
+  }, [exams, currentExamId]);
+
+  // Update current exam helper
+  const updateCurrentExam = (updater) => {
+    setExams(prev => prev.map(e => {
+      if (e.id === currentExam.id) {
+        const updated = typeof updater === 'function' ? updater(e) : { ...e, ...updater };
+        return { ...updated, updated_at: new Date().toISOString() };
+      }
+      return e;
+    }));
+  };
+
+  // Create New Exam
+  const handleCreateNewExam = () => {
+    const title = prompt('Nhập tên kỳ thi / bài kiểm tra mới:', `Bài kiểm tra ${exams.length + 1}`);
+    if (!title || !title.trim()) return;
+
+    const newExam = {
+      id: 'exam_' + Date.now(),
+      title: title.trim(),
+      sheet_type: '2025_math',
+      config: { maxP1: 12, maxP2: 4, maxP3: 6 },
+      answer_keys: {},
+      submissions: [],
+      updated_at: new Date().toISOString(),
+    };
+
+    setExams(prev => [newExam, ...prev]);
+    setCurrentExamId(newExam.id);
+    setActiveTab('config');
+  };
+
+  // Delete Current Exam
+  const handleDeleteCurrentExam = () => {
+    if (exams.length <= 1) {
+      alert('Phải giữ lại ít nhất 1 kỳ thi trong hệ thống.');
+      return;
+    }
+    if (confirm(`Bạn có chắc muốn xóa kỳ thi "${currentExam.title}" và toàn bộ dữ liệu bài chấm của nó?`)) {
+      const remaining = exams.filter(e => e.id !== currentExam.id);
+      setExams(remaining);
+      setCurrentExamId(remaining[0].id);
+    }
+  };
+
+  // Save / Sync to Supabase Cloud
+  const handleSaveToCloud = async () => {
+    try {
+      setCloudStatus('Đang lưu lên Supabase Cloud…');
+      const res = await api.saveExamCloud({
+        id: currentExam.id.startsWith('exam_') ? undefined : currentExam.id,
+        title: currentExam.title,
+        sheet_type: currentExam.sheet_type,
+        config: currentExam.config,
+        answer_keys: currentExam.answer_keys,
+        submissions: currentExam.submissions,
+      });
+      if (res.exam && res.exam.id) {
+        updateCurrentExam({ id: res.exam.id });
+      }
+      setCloudStatus('✓ Đã đồng bộ lên Supabase Cloud thành công!');
+      setTimeout(() => setCloudStatus(null), 4000);
+    } catch (err) {
+      setCloudStatus(`⚠️ ${err.message}`);
+    }
+  };
+
+  // Load / Sync from Supabase Cloud
+  const handleLoadFromCloud = async () => {
+    try {
+      setCloudStatus('Đang tải danh sách từ Supabase…');
+      const cloudExams = await api.listExamsCloud();
+      if (!cloudExams || cloudExams.length === 0) {
+        alert('Chưa có kỳ thi nào được lưu trên Supabase Cloud.');
+        setCloudStatus(null);
+        return;
+      }
+
+      // Merge cloud exams with local exams by ID
+      setExams(prev => {
+        const merged = [...prev];
+        cloudExams.forEach(ce => {
+          const idx = merged.findIndex(m => m.id === ce.id || m.title === ce.title);
+          const normalized = {
+            id: ce.id,
+            title: ce.title,
+            sheet_type: ce.sheet_type || '2025_math',
+            config: ce.config || { maxP1: 12, maxP2: 4, maxP3: 6 },
+            answer_keys: ce.answer_keys || {},
+            submissions: ce.submissions || [],
+            updated_at: ce.updated_at || new Date().toISOString(),
+          };
+          if (idx !== -1) merged[idx] = normalized;
+          else merged.push(normalized);
+        });
+        return merged;
+      });
+
+      setCloudStatus(`✓ Đã đồng bộ ${cloudExams.length} kỳ thi từ Supabase Cloud!`);
+      setTimeout(() => setCloudStatus(null), 4000);
+    } catch (err) {
+      setCloudStatus(`⚠️ ${err.message}`);
+    }
+  };
+
+  // Check if Word Shuffle created answers
+  const handleImportFromWordShuffle = () => {
+    try {
+      const saved = localStorage.getItem('exam_answer_keys_2025');
+      if (saved) {
+        const keys = JSON.parse(saved);
+        const codes = Object.keys(keys);
+        if (codes.length > 0) {
+          updateCurrentExam({ answer_keys: keys });
+          alert(`Đã nạp thành công đáp án của ${codes.length} mã đề từ Trộn đề Word: ${codes.join(', ')}`);
+          return;
+        }
+      }
+      alert('Chưa tìm thấy đáp án nào từ phiên Trộn đề Word gần đây.');
+    } catch (e) {
+      alert(`Lỗi nạp: ${e.message}`);
+    }
+  };
 
   // Camera & Scanning State
   const videoRef = useRef(null);
@@ -72,22 +218,18 @@ export default function GradePage() {
   const [currentResult, setCurrentResult] = useState(null);
   const [selectedSubForView, setSelectedSubForView] = useState(null);
 
-  // Available exam codes
+  const answerKeys = currentExam.answer_keys || {};
   const examCodes = useMemo(() => Object.keys(answerKeys), [answerKeys]);
   const [previewExamCode, setPreviewExamCode] = useState(examCodes[0] || '101');
 
-  // Save changes to localStorage
+  // Sync title edit state when exam changes
   useEffect(() => {
-    localStorage.setItem(STORAGE_CONFIG_KEY, JSON.stringify(config));
-  }, [config]);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS_KEY, JSON.stringify(answerKeys));
-  }, [answerKeys]);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_SUBMISSIONS_KEY, JSON.stringify(submissions));
-  }, [submissions]);
+    setEditTitleVal(currentExam.title);
+    setIsEditingTitle(false);
+    if (examCodes.length > 0 && !examCodes.includes(previewExamCode)) {
+      setPreviewExamCode(examCodes[0]);
+    }
+  }, [currentExam.id, currentExam.title, examCodes]);
 
   // Handle camera lifecycle
   useEffect(() => {
@@ -156,9 +298,9 @@ export default function GradePage() {
       const res = await api.scanSheet(
         base64Data,
         answerKeys,
-        config.maxP1,
-        config.maxP2,
-        config.maxP3
+        currentExam.config.maxP1,
+        currentExam.config.maxP2,
+        currentExam.config.maxP3
       );
 
       setCurrentResult(res);
@@ -182,9 +324,9 @@ export default function GradePage() {
       const res = await api.scanSheet(
         file,
         answerKeys,
-        config.maxP1,
-        config.maxP2,
-        config.maxP3
+        currentExam.config.maxP1,
+        currentExam.config.maxP2,
+        currentExam.config.maxP3
       );
 
       setCurrentResult(res);
@@ -197,7 +339,7 @@ export default function GradePage() {
     }
   };
 
-  // Save current result and prepare for next paper
+  // Save current result to current exam
   const handleSaveAndNext = () => {
     if (!currentResult) return;
 
@@ -211,7 +353,10 @@ export default function GradePage() {
       annotated_image: currentResult.annotated_image,
     };
 
-    setSubmissions(prev => [newSub, ...prev]);
+    updateCurrentExam(e => ({
+      ...e,
+      submissions: [newSub, ...(e.submissions || [])],
+    }));
     setCurrentResult(null);
   };
 
@@ -228,7 +373,7 @@ export default function GradePage() {
       setIsProcessing(true);
       const res = await api.importAnswersExcel(file);
       if (res.answer_keys) {
-        setAnswerKeys(res.answer_keys);
+        updateCurrentExam({ answer_keys: res.answer_keys });
         const codes = Object.keys(res.answer_keys);
         if (codes.length > 0) setPreviewExamCode(codes[0]);
         alert(`Đã nạp thành công đáp án cho ${codes.length} mã đề: ${codes.join(', ')}`);
@@ -243,16 +388,17 @@ export default function GradePage() {
 
   // Export Gradebook to Excel
   const handleExportGradebook = async () => {
-    if (submissions.length === 0) {
+    const subs = currentExam.submissions || [];
+    if (subs.length === 0) {
       alert('Chưa có bài chấm nào trong danh sách.');
       return;
     }
     try {
       setIsProcessing(true);
-      const url = await api.exportGradeExcel(examTitle, submissions);
+      const url = await api.exportGradeExcel(currentExam.title, subs);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `Bang_diem_${examTitle.replace(/\s+/g, '_')}.xlsx`;
+      link.download = `Bang_diem_${currentExam.title.replace(/\s+/g, '_')}.xlsx`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -266,18 +412,50 @@ export default function GradePage() {
   // Delete a submission
   const handleDeleteSubmission = (id) => {
     if (confirm('Bạn có chắc muốn xóa bài chấm này khỏi danh sách?')) {
-      setSubmissions(prev => prev.filter(s => s.id !== id));
+      updateCurrentExam(e => ({
+        ...e,
+        submissions: (e.submissions || []).filter(s => s.id !== id),
+      }));
     }
   };
 
-  // Clear all submissions
+  // Clear all submissions for current exam
   const handleClearAllSubmissions = () => {
-    if (confirm('Bạn có chắc muốn xóa toàn bộ bảng điểm của lớp này để bắt đầu lại?')) {
-      setSubmissions([]);
+    if (confirm(`Bạn có chắc muốn xóa toàn bộ bài chấm của kỳ thi "${currentExam.title}"?`)) {
+      updateCurrentExam({ submissions: [] });
     }
   };
+
+  // Handle Sheet Type Preset selection
+  const handleSheetTypeChange = (type) => {
+    if (type === '2025_math') {
+      updateCurrentExam({
+        sheet_type: type,
+        config: { maxP1: 12, maxP2: 4, maxP3: 6 },
+      });
+    } else if (type === '2025_full') {
+      updateCurrentExam({
+        sheet_type: type,
+        config: { maxP1: 40, maxP2: 8, maxP3: 6 },
+      });
+    } else {
+      updateCurrentExam({ sheet_type: type });
+    }
+  };
+
+  // URL for Sample Excel template based on current config
+  const sampleExcelUrl = useMemo(() => {
+    const codes = examCodes.length > 0 ? examCodes.join(',') : '101,102,103,104';
+    return api.getSampleExcelUrl(
+      currentExam.config.maxP1,
+      currentExam.config.maxP2,
+      currentExam.config.maxP3,
+      codes
+    );
+  }, [currentExam.config, examCodes]);
 
   // Statistics
+  const submissions = currentExam.submissions || [];
   const stats = useMemo(() => {
     if (submissions.length === 0) return { total: 0, avg: 0, max: 0, min: 0 };
     const scores = submissions.map(s => s.grading?.total_score || 0);
@@ -316,6 +494,127 @@ export default function GradePage() {
             </a>
           </div>
         </header>
+
+        {/* ======================================================== */}
+        {/* EXAM / KT SELECTOR BAR (QUẢN LÝ NHIỀU KỲ THI) */}
+        {/* ======================================================== */}
+        <div className="exam-selector-bar">
+          <div className="exam-select-group">
+            <span className="exam-select-label">Kỳ thi / KT:</span>
+            {isEditingTitle ? (
+              <div style={{ display: 'flex', gap: '0.35rem', flex: 1 }}>
+                <input
+                  type="text"
+                  value={editTitleVal}
+                  onChange={e => setEditTitleVal(e.target.value)}
+                  style={{
+                    flex: 1,
+                    padding: '0.4rem 0.6rem',
+                    border: '1px solid #0284c7',
+                    borderRadius: '0.4rem',
+                    fontWeight: 700,
+                  }}
+                  autoFocus
+                />
+                <button
+                  className="btn-primary"
+                  style={{ padding: '0.4rem 0.7rem' }}
+                  onClick={() => {
+                    if (editTitleVal.trim()) {
+                      updateCurrentExam({ title: editTitleVal.trim() });
+                    }
+                    setIsEditingTitle(false);
+                  }}
+                  title="Lưu tên"
+                >
+                  <Check size={16} />
+                </button>
+              </div>
+            ) : (
+              <select
+                className="exam-dropdown"
+                value={currentExamId}
+                onChange={e => setCurrentExamId(e.target.value)}
+              >
+                {exams.map(ex => (
+                  <option key={ex.id} value={ex.id}>
+                    {ex.title} ({ex.submissions?.length || 0} bài)
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {!isEditingTitle && (
+              <button
+                className="btn-secondary"
+                style={{ padding: '0.45rem', minWidth: '32px' }}
+                onClick={() => {
+                  setEditTitleVal(currentExam.title);
+                  setIsEditingTitle(true);
+                }}
+                title="Đổi tên kỳ thi"
+              >
+                <Edit2 size={15} />
+              </button>
+            )}
+          </div>
+
+          {/* Exam Actions */}
+          <div className="exam-selector-actions">
+            <button
+              className="btn-primary"
+              onClick={handleCreateNewExam}
+              title="Tạo kỳ thi mới"
+            >
+              <Plus size={16} />
+              Kỳ thi mới
+            </button>
+
+            <button
+              className="btn-secondary"
+              onClick={handleSaveToCloud}
+              title="Lưu kỳ thi hiện tại lên Supabase Cloud"
+            >
+              <CloudUpload size={16} />
+              Lưu Cloud
+            </button>
+
+            <button
+              className="btn-secondary"
+              onClick={handleLoadFromCloud}
+              title="Đồng bộ danh sách kỳ thi từ Supabase Cloud"
+            >
+              <CloudDownload size={16} />
+              Đồng bộ Cloud
+            </button>
+
+            {exams.length > 1 && (
+              <button
+                className="btn-danger"
+                onClick={handleDeleteCurrentExam}
+                title="Xóa kỳ thi này"
+              >
+                <Trash2 size={16} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Cloud Status Toast / Banner */}
+        {cloudStatus && (
+          <div
+            className="uncertain-alert"
+            style={{
+              marginBottom: '1rem',
+              backgroundColor: cloudStatus.startsWith('✓') ? '#f0fdf4' : '#fffbeb',
+              borderColor: cloudStatus.startsWith('✓') ? '#bbf7d0' : '#fef3c7',
+              color: cloudStatus.startsWith('✓') ? '#166534' : '#92400e',
+            }}
+          >
+            <Cloud size={16} />
+            <div>{cloudStatus}</div>
+          </div>
+        )}
 
         {/* Navigation Tabs */}
         <div className="grade-tabs">
@@ -523,12 +822,12 @@ export default function GradePage() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: '0.85rem', color: '#64748b' }}>Mã đề đang có đáp án:</span>
                   <span style={{ fontWeight: 700, color: '#0f172a' }}>
-                    {examCodes.length > 0 ? examCodes.join(', ') : 'Chưa nạp (mặc định)'}
+                    {examCodes.length > 0 ? examCodes.join(', ') : 'Chưa nạp'}
                   </span>
                 </div>
                 {examCodes.length === 0 && (
                   <p style={{ fontSize: '0.8rem', color: '#f59e0b', margin: '0.5rem 0 0' }}>
-                    Chưa có file đáp án! Vui lòng sang tab <strong>Đáp án & Cài đặt</strong> để nạp file Excel từ Trộn đề.
+                    Chưa có file đáp án! Vui lòng sang tab <strong>Đáp án & Cài đặt</strong> để tải file mẫu Excel hoặc nạp đáp án.
                   </p>
                 )}
               </div>
@@ -563,22 +862,11 @@ export default function GradePage() {
 
             {/* Actions Bar */}
             <div className="gradebook-actions-bar">
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                <input
-                  type="text"
-                  value={examTitle}
-                  onChange={e => setExamTitle(e.target.value)}
-                  style={{
-                    padding: '0.5rem 0.75rem',
-                    border: '1px solid #cbd5e1',
-                    borderRadius: '0.5rem',
-                    fontWeight: 600,
-                  }}
-                  placeholder="Tên bài kiểm tra"
-                />
+              <div style={{ fontWeight: 700, color: '#0f172a', fontSize: '1.05rem' }}>
+                Kỳ thi: {currentExam.title}
               </div>
 
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                 <button
                   className="btn-primary"
                   onClick={handleExportGradebook}
@@ -590,7 +878,7 @@ export default function GradePage() {
                 {submissions.length > 0 && (
                   <button className="btn-danger" onClick={handleClearAllSubmissions}>
                     <Trash2 size={16} />
-                    Xóa tất cả
+                    Xóa tất cả bài chấm
                   </button>
                 )}
               </div>
@@ -600,7 +888,7 @@ export default function GradePage() {
             {submissions.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '3rem 1rem', color: '#94a3b8' }}>
                 <FileSpreadsheet size={48} style={{ margin: '0 auto 1rem', opacity: 0.4 }} />
-                <p>Chưa có bài chấm nào. Hãy chuyển sang tab <strong>Quét chấm bài</strong> để bắt đầu chấm.</p>
+                <p>Chưa có bài chấm nào cho kỳ thi này. Hãy chuyển sang tab <strong>Quét chấm bài</strong> để bắt đầu chấm.</p>
               </div>
             ) : (
               <div className="grade-table-wrap">
@@ -707,86 +995,155 @@ export default function GradePage() {
         )}
 
         {/* ======================================================== */}
-        {/* TAB 3: CONFIG & ANSWER KEYS */}
+        {/* TAB 3: CONFIG & ANSWER KEYS (ĐÁP ÁN - CÀI ĐẶT) */}
         {/* ======================================================== */}
         {activeTab === 'config' && (
           <div className="config-card">
-            {/* Import TNMaker Excel */}
+            {/* 1. Tên kỳ thi & Loại phiếu */}
             <div className="config-box">
-              <h3><FileSpreadsheet size={18} color="#16a34a" /> Nạp đáp án từ Excel TNMaker 2025</h3>
-              <p className="config-desc">
-                Chọn file <code>Dap_an_TNMaker_2025.xlsx</code> được tạo tự động từ công cụ <strong>Trộn đề Word</strong>.
-              </p>
-              <label className="btn-primary" style={{ cursor: 'pointer' }}>
-                <Upload size={16} />
-                Chọn file Excel TNMaker
-                <input
-                  type="file"
-                  accept=".xlsx, .xls"
-                  onChange={handleImportExcel}
-                  style={{ display: 'none' }}
-                />
-              </label>
-            </div>
+              <h3><Settings size={18} color="#0284c7" /> 1. Cài đặt loại phiếu & số câu từng phần</h3>
 
-            {/* Structure Setting */}
-            <div className="config-box">
-              <h3><Settings size={18} color="#0284c7" /> Cấu trúc đề thi</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginTop: '1rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', marginTop: '1rem' }}>
                 <div>
-                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
-                    Phần I (Trắc nghiệm 4 lựa chọn)
+                  <label style={{ fontSize: '0.85rem', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>
+                    Tên kỳ thi / Bài kiểm tra:
                   </label>
-                  <select
-                    value={config.maxP1}
-                    onChange={e => setConfig({ ...config, maxP1: Number(e.target.value) })}
-                    style={{ width: '100%', padding: '0.5rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1' }}
-                  >
-                    <option value={12}>12 câu (Toán chuẩn 2025 - 3.0đ)</option>
-                    <option value={40}>40 câu (Tối đa toàn phiếu - 10.0đ)</option>
-                  </select>
+                  <input
+                    type="text"
+                    value={currentExam.title}
+                    onChange={e => updateCurrentExam({ title: e.target.value })}
+                    style={{ width: '100%', padding: '0.55rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1', fontWeight: 600 }}
+                  />
                 </div>
 
                 <div>
-                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
-                    Phần II (Trắc nghiệm Đúng/Sai)
+                  <label style={{ fontSize: '0.85rem', fontWeight: 700, display: 'block', marginBottom: '0.35rem' }}>
+                    Mẫu phiếu trả lời:
                   </label>
                   <select
-                    value={config.maxP2}
-                    onChange={e => setConfig({ ...config, maxP2: Number(e.target.value) })}
-                    style={{ width: '100%', padding: '0.5rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1' }}
+                    value={currentExam.sheet_type || '2025_math'}
+                    onChange={e => handleSheetTypeChange(e.target.value)}
+                    style={{ width: '100%', padding: '0.55rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1', fontWeight: 600 }}
                   >
-                    <option value={4}>4 câu (Toán chuẩn 2025 - 4.0đ)</option>
-                    <option value={8}>8 câu (Tối đa toàn phiếu - 8.0đ)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
-                    Phần III (Trả lời ngắn)
-                  </label>
-                  <select
-                    value={config.maxP3}
-                    onChange={e => setConfig({ ...config, maxP3: Number(e.target.value) })}
-                    style={{ width: '100%', padding: '0.5rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1' }}
-                  >
-                    <option value={6}>6 câu (Toán chuẩn 2025 - 3.0đ)</option>
+                    <option value="2025_math">Phiếu chuẩn Bộ GD&ĐT 2025 — Toán (12 - 4 - 6 câu)</option>
+                    <option value="2025_full">Phiếu chuẩn Bộ GD&ĐT 2025 — Đầy đủ (40 - 8 - 6 câu)</option>
+                    <option value="2025_custom">Phiếu 2025 — Tùy chỉnh số câu theo ý muốn</option>
                   </select>
                 </div>
               </div>
+
+              {/* Number of questions per part (Selectable) */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginTop: '1rem' }}>
+                <div>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
+                    Phần I: Số câu trắc nghiệm (A,B,C,D)
+                  </label>
+                  <select
+                    value={currentExam.config.maxP1}
+                    onChange={e => updateCurrentExam(ex => ({
+                      ...ex,
+                      config: { ...ex.config, maxP1: Number(e.target.value) },
+                    }))}
+                    style={{ width: '100%', padding: '0.5rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1' }}
+                  >
+                    {[10, 12, 15, 20, 25, 30, 35, 40].map(n => (
+                      <option key={n} value={n}>{n} câu {n === 12 ? '(Chuẩn môn Toán)' : ''}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
+                    Phần II: Số câu Đúng/Sai (a,b,c,d)
+                  </label>
+                  <select
+                    value={currentExam.config.maxP2}
+                    onChange={e => updateCurrentExam(ex => ({
+                      ...ex,
+                      config: { ...ex.config, maxP2: Number(e.target.value) },
+                    }))}
+                    style={{ width: '100%', padding: '0.5rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1' }}
+                  >
+                    <option value={0}>0 câu (Không có Phần II)</option>
+                    <option value={2}>2 câu</option>
+                    <option value={4}>4 câu (Chuẩn môn Toán)</option>
+                    <option value={6}>6 câu</option>
+                    <option value={8}>8 câu (Tối đa cả phiếu)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
+                    Phần III: Số câu trả lời ngắn (điền số)
+                  </label>
+                  <select
+                    value={currentExam.config.maxP3}
+                    onChange={e => updateCurrentExam(ex => ({
+                      ...ex,
+                      config: { ...ex.config, maxP3: Number(e.target.value) },
+                    }))}
+                    style={{ width: '100%', padding: '0.5rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1' }}
+                  >
+                    <option value={0}>0 câu (Không có Phần III)</option>
+                    <option value={2}>2 câu</option>
+                    <option value={4}>4 câu</option>
+                    <option value={6}>6 câu (Chuẩn môn Toán / Tối đa)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ marginTop: '0.75rem', fontSize: '0.85rem', color: '#16a34a', fontWeight: 600 }}>
+                ✓ Tổng bài thi hiện tại: {currentExam.config.maxP1} câu Phần I + {currentExam.config.maxP2} câu Phần II + {currentExam.config.maxP3} câu Phần III.
+              </div>
             </div>
 
-            {/* Answer Key Viewer */}
+            {/* 2. File mẫu Excel & Upload đáp án */}
             <div className="config-box">
-              <h3><FileText size={18} color="#7c3aed" /> Đáp án đã nạp theo mã đề</h3>
+              <h3><FileSpreadsheet size={18} color="#16a34a" /> 2. Quản lý File đáp án Excel TNMaker</h3>
+              <p className="config-desc">
+                Tải file mẫu Excel đã được định dạng sẵn đúng số câu ở trên, điền hoặc sửa đáp án theo các mã đề, sau đó nạp file lên hệ thống.
+              </p>
+
+              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                <a
+                  href={sampleExcelUrl}
+                  download="Mau_dap_an_TNMaker_2025.xlsx"
+                  className="btn-secondary"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}
+                >
+                  <Download size={16} />
+                  Tải file mẫu Excel đáp án (.xlsx)
+                </a>
+
+                <label className="btn-primary" style={{ cursor: 'pointer' }}>
+                  <Upload size={16} />
+                  Nạp file Excel đáp án
+                  <input
+                    type="file"
+                    accept=".xlsx, .xls"
+                    onChange={handleImportExcel}
+                    style={{ display: 'none' }}
+                  />
+                </label>
+
+                <button className="btn-secondary" onClick={handleImportFromWordShuffle}>
+                  <Zap size={16} color="#eab308" />
+                  Lấy từ Trộn đề Word
+                </button>
+              </div>
+            </div>
+
+            {/* 3. Xem đáp án các mã đề */}
+            <div className="config-box">
+              <h3><FileText size={18} color="#7c3aed" /> 3. Đáp án các mã đề của kỳ thi này</h3>
               {examCodes.length === 0 ? (
                 <p style={{ color: '#64748b', fontSize: '0.9rem' }}>
-                  Chưa có mã đề nào được nạp. Hãy nạp file Excel ở trên hoặc từ công cụ Trộn đề.
+                  Chưa có mã đề nào được nạp cho kỳ thi này. Hãy tải file mẫu Excel ở trên, sửa đáp án rồi nạp lên.
                 </p>
               ) : (
                 <>
                   <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '1rem' }}>
-                    <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>Xem mã đề:</span>
+                    <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>Chọn mã đề:</span>
                     <select
                       value={previewExamCode}
                       onChange={e => setPreviewExamCode(e.target.value)}
@@ -839,4 +1196,3 @@ export default function GradePage() {
     </main>
   );
 }
-

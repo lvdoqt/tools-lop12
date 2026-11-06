@@ -31,7 +31,14 @@ if __package__:
     from .services.word_math import compile_math
     from .services.pdf_header import add_pdf_header
     from .services.omr_engine_2025 import process_omr_sheet
-    from .services.grade_manager import parse_tnmaker_excel, export_gradebook_excel
+    from .services.grade_manager import (
+        parse_tnmaker_excel,
+        export_gradebook_excel,
+        generate_sample_answer_template,
+        list_exams_supabase,
+        save_exam_supabase,
+        delete_exam_supabase,
+    )
 else:
     from services.tikz_renderer import render_tikz
     from services.latex_quiz import parse_quiz
@@ -42,7 +49,14 @@ else:
     from services.word_math import compile_math
     from services.pdf_header import add_pdf_header
     from services.omr_engine_2025 import process_omr_sheet
-    from services.grade_manager import parse_tnmaker_excel, export_gradebook_excel
+    from services.grade_manager import (
+        parse_tnmaker_excel,
+        export_gradebook_excel,
+        generate_sample_answer_template,
+        list_exams_supabase,
+        save_exam_supabase,
+        delete_exam_supabase,
+    )
 
 MAX_PDF_BYTES = 4 * 1024 * 1024
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -615,6 +629,81 @@ async def get_template_pdf():
             "Cache-Control": "public, max-age=86400",
         }
     )
+
+
+@app.get("/api/grade/sample-excel")
+async def get_sample_answer_excel(
+    max_p1: int = 12,
+    max_p2: int = 4,
+    max_p3: int = 6,
+    codes: str = "101,102,103,104",
+):
+    try:
+        code_list = [c.strip() for c in codes.split(",") if c.strip()] or ["101", "102", "103", "104"]
+        excel_bytes = await run_in_threadpool(
+            generate_sample_answer_template,
+            max_p1,
+            max_p2,
+            max_p3,
+            code_list,
+        )
+        return Response(
+            excel_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": 'attachment; filename="Mau_dap_an_TNMaker_2025.xlsx"',
+                "Cache-Control": "no-store",
+            }
+        )
+    except Exception as exc:
+        logger.exception("Error generating sample answer excel")
+        raise HTTPException(500, f"Lỗi tạo file mẫu đáp án: {str(exc)}")
+
+
+@app.get("/api/grade/exams")
+async def get_exams():
+    try:
+        exams = await run_in_threadpool(list_exams_supabase)
+        return JSONResponse({"success": True, "exams": exams})
+    except Exception as exc:
+        logger.exception("Error listing exams from Supabase")
+        return JSONResponse({"success": False, "exams": [], "error": str(exc)})
+
+
+class ExamSaveRequest(BaseModel):
+    id: Optional[str] = None
+    title: str = Field(..., min_length=1, max_length=200)
+    sheet_type: str = "2025_math"
+    config: Dict[str, Any] = Field(default_factory=dict)
+    answer_keys: Dict[str, Any] = Field(default_factory=dict)
+    submissions: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+ExamSaveRequest.model_rebuild()
+
+
+@app.post("/api/grade/exams")
+async def post_exam(request: ExamSaveRequest):
+    try:
+        saved = await run_in_threadpool(save_exam_supabase, request.model_dump())
+        return JSONResponse({"success": True, "exam": saved})
+    except ValueError as val_err:
+        raise HTTPException(400, str(val_err))
+    except Exception as exc:
+        logger.exception("Error saving exam to Supabase")
+        raise HTTPException(500, f"Lỗi lưu kỳ thi lên Supabase: {str(exc)}")
+
+
+@app.delete("/api/grade/exams/{exam_id}")
+async def delete_exam(exam_id: str):
+    try:
+        ok = await run_in_threadpool(delete_exam_supabase, exam_id)
+        if not ok:
+            raise HTTPException(400, "Không thể xóa kỳ thi.")
+        return JSONResponse({"success": True})
+    except Exception as exc:
+        logger.exception("Error deleting exam from Supabase")
+        raise HTTPException(500, f"Lỗi xóa kỳ thi trên Supabase: {str(exc)}")
 
 
 if __name__ == "__main__":

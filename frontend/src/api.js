@@ -150,4 +150,32 @@ export const api = {
   },
 
   getTemplatePdfUrl: () => `${API_BASE}/grade/template-pdf`,
+
+  getSampleExcelUrl: (maxP1 = 12, maxP2 = 4, maxP3 = 6, codes = '101,102,103,104') =>
+    `${API_BASE}/grade/sample-excel?max_p1=${maxP1}&max_p2=${maxP2}&max_p3=${maxP3}&codes=${encodeURIComponent(codes)}`,
+
+  listExamsCloud: async () => {
+    const res = await fetch(`${API_BASE}/grade/exams`);
+    if (!res.ok) return [];
+    const data = await res.json().catch(() => ({}));
+    return data.exams || [];
+  },
+
+  saveExamCloud: async (examData) => {
+    const res = await fetch(`${API_BASE}/grade/exams`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(examData),
+    });
+    await checkResponse(res, 'Không thể lưu kỳ thi lên Supabase.');
+    return res.json();
+  },
+
+  deleteExamCloud: async (examId) => {
+    const res = await fetch(`${API_BASE}/grade/exams/${examId}`, {
+      method: 'DELETE',
+    });
+    await checkResponse(res, 'Không thể xóa kỳ thi trên Supabase.');
+    return res.json();
+  },
 };

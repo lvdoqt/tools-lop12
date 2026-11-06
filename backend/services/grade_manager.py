@@ -1,28 +1,36 @@
 """
 Grade Manager Service:
 Handles Excel Answer Key importing (TNMaker 2025 format),
-Exporting Gradebooks to Excel, and Session Management.
+Sample Excel Template generation,
+Exporting Gradebooks to Excel,
+and Supabase cloud synchronization for multi-exam management.
 """
 
 from io import BytesIO
 import json
+import os
 from typing import Any, Dict, List, Optional
 import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+import requests
+
+
+def get_supabase_config():
+    url = os.getenv('SUPABASE_URL', '').strip().rstrip('/')
+    secret = (
+        os.getenv('SUPABASE_SECRET_KEY', '').strip()
+        or os.getenv('SUPABASE_SERVICE_ROLE_KEY', '').strip()
+    )
+    return url, secret
 
 
 def parse_tnmaker_excel(file_bytes: bytes) -> Dict[str, Dict[str, Any]]:
     """
     Parse Dap_an_TNMaker_2025.xlsx into structured answer keys per exam code.
-    Returns:
-    {
-      "101": {
-         "part1": { 1: "A", 2: "B", ... },
-         "part2": { 1: "ĐSĐS", 2: "SĐĐS", ... }, # or sub-dict
-         "part3": { 1: "446", 2: "-12,5", ... }
-      },
-      ...
-    }
+    Correctly indexes:
+    - Part I: questions 1..N
+    - Part II: questions 1..M (reset counter to 1 for Part II)
+    - Part III: questions 1..K (reset counter to 1 for Part III)
     """
     wb = openpyxl.load_workbook(BytesIO(file_bytes), data_only=True)
     sheet = wb.active
@@ -32,54 +40,181 @@ def parse_tnmaker_excel(file_bytes: bytes) -> Dict[str, Dict[str, Any]]:
         raise ValueError("File Excel đáp án rỗng hoặc không đúng định dạng.")
 
     header = rows[0]
-    # Header format: ['Câu\\Mã đề', '101', '102', ...]
     exam_codes = [str(c).strip() for c in header[1:] if c is not None]
 
     keys_by_code: Dict[str, Dict[str, Any]] = {
         code: {"part1": {}, "part2": {}, "part3": {}} for code in exam_codes
     }
 
-    # Iterate rows for questions
-    p1_idx = 1
-    p2_idx = 1
-    p3_idx = 1
+    p1_counter = 0
+    p2_counter = 0
+    p3_counter = 0
 
     for row in rows[1:]:
         if not row or row[0] is None:
             continue
-        q_label = str(row[0]).strip()
 
-        # Check answers across exam codes
-        for col_idx, code in enumerate(exam_codes):
-            val = row[col_idx + 1]
-            if val is None:
-                continue
-            val_str = str(val).strip()
+        # Look at the first valid cell in the row to determine row part type
+        row_type = None
+        for col_idx in range(len(exam_codes)):
+            val = row[col_idx + 1] if col_idx + 1 < len(row) else None
+            if val is not None:
+                val_s = str(val).strip()
+                if len(val_s) == 1 and val_s.upper() in ['A', 'B', 'C', 'D']:
+                    row_type = 'p1'
+                    break
+                elif len(val_s) == 4 and all(c.upper() in ['Đ', 'S', 'D', 'T', '1', '0'] for c in val_s):
+                    row_type = 'p2'
+                    break
+                else:
+                    row_type = 'p3'
+                    break
 
-            # Classify answer type:
-            # If 1 char in ABCD -> Part I
-            # If 4 chars composed of Đ, S, D, T, 0, 1 -> Part II
-            # Else (digits, commas, minuses) -> Part III
-            is_p1 = len(val_str) == 1 and val_str.upper() in ['A', 'B', 'C', 'D']
-            is_p2 = len(val_str) == 4 and all(c.upper() in ['Đ', 'S', 'D', 'T', '1', '0'] for c in val_str)
+        if row_type == 'p1':
+            p1_counter += 1
+            q_num = p1_counter
+            for col_idx, code in enumerate(exam_codes):
+                val = row[col_idx + 1] if col_idx + 1 < len(row) else None
+                if val is not None:
+                    keys_by_code[code]["part1"][q_num] = str(val).strip().upper()
 
-            if is_p1:
-                # Part I
-                # Use sequential index or parse from q_label if integer
-                q_num = int(q_label) if q_label.isdigit() else p1_idx
-                keys_by_code[code]["part1"][q_num] = val_str.upper()
-            elif is_p2:
-                # Part II
-                q_num = int(q_label) if q_label.isdigit() else p2_idx
-                # Normalize to 'Đ' / 'S'
-                norm_p2 = "".join(['Đ' if c.upper() in ['Đ', 'D', 'T', '1'] else 'S' for c in val_str])
-                keys_by_code[code]["part2"][q_num] = norm_p2
-            else:
-                # Part III (numerical answer)
-                q_num = int(q_label) if q_label.isdigit() else p3_idx
-                keys_by_code[code]["part3"][q_num] = val_str.replace('.', ',')
+        elif row_type == 'p2':
+            p2_counter += 1
+            q_num = p2_counter
+            for col_idx, code in enumerate(exam_codes):
+                val = row[col_idx + 1] if col_idx + 1 < len(row) else None
+                if val is not None:
+                    val_s = str(val).strip()
+                    norm_p2 = "".join(['Đ' if c.upper() in ['Đ', 'D', 'T', '1'] else 'S' for c in val_s])
+                    keys_by_code[code]["part2"][q_num] = norm_p2
+
+        elif row_type == 'p3':
+            p3_counter += 1
+            q_num = p3_counter
+            for col_idx, code in enumerate(exam_codes):
+                val = row[col_idx + 1] if col_idx + 1 < len(row) else None
+                if val is not None:
+                    keys_by_code[code]["part3"][q_num] = str(val).strip().replace('.', ',')
 
     return keys_by_code
+
+
+def generate_sample_answer_template(
+    max_p1: int = 12,
+    max_p2: int = 4,
+    max_p3: int = 6,
+    exam_codes: Optional[List[str]] = None,
+) -> bytes:
+    """
+    Generate a clean, standardized Excel sample template for answer keys (TNMaker 2025 format).
+    Teachers can download, modify answers, and upload back to the system.
+    """
+    if not exam_codes:
+        exam_codes = ['101', '102', '103', '104']
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Dữ liệu"
+
+    # Fonts & Styles
+    font_header = Font(name="Arial", size=11, bold=True, color="FFFFFF")
+    font_data = Font(name="Arial", size=10)
+    font_bold = Font(name="Arial", size=10, bold=True)
+    font_note = Font(name="Arial", size=9, italic=True, color="64748B")
+
+    fill_header = PatternFill(start_color="1E40AF", end_color="1E40AF", fill_type="solid")
+    fill_p1 = PatternFill(start_color="EFF6FF", end_color="EFF6FF", fill_type="solid")
+    fill_p2 = PatternFill(start_color="F0FDF4", end_color="F0FDF4", fill_type="solid")
+    fill_p3 = PatternFill(start_color="FFFBEB", end_color="FFFBEB", fill_type="solid")
+
+    thin_border = Border(
+        left=Side(style='thin', color='CBD5E1'),
+        right=Side(style='thin', color='CBD5E1'),
+        top=Side(style='thin', color='CBD5E1'),
+        bottom=Side(style='thin', color='CBD5E1')
+    )
+
+    align_center = Alignment(horizontal='center', vertical='center')
+
+    # Header Row
+    header_vals = ['Câu\\Mã đề'] + exam_codes
+    ws.append(header_vals)
+    ws.row_dimensions[1].height = 28
+
+    for col_idx in range(1, len(header_vals) + 1):
+        c = ws.cell(row=1, column=col_idx)
+        c.font = font_header
+        c.fill = fill_header
+        c.alignment = align_center
+        c.border = thin_border
+
+    current_row = 2
+    row_count = 1
+
+    # Part I: max_p1 questions (A, B, C, D)
+    sample_opts = ['A', 'B', 'C', 'D']
+    for i in range(1, max_p1 + 1):
+        row_data = [row_count]
+        for c_idx in range(len(exam_codes)):
+            row_data.append(sample_opts[(i + c_idx - 1) % 4])
+        ws.append(row_data)
+        for col_idx in range(1, len(header_vals) + 1):
+            cell = ws.cell(row=current_row, column=col_idx)
+            cell.font = font_data
+            cell.alignment = align_center
+            cell.border = thin_border
+            cell.fill = fill_p1
+        current_row += 1
+        row_count += 1
+
+    # Part II: max_p2 questions (ĐSĐS, SĐĐS, ...)
+    sample_p2 = ['ĐSĐS', 'SĐĐS', 'ĐĐSS', 'SĐSĐ', 'ĐSĐĐ', 'SĐSS', 'ĐĐĐS', 'SSSS']
+    for i in range(1, max_p2 + 1):
+        row_data = [row_count]
+        for c_idx in range(len(exam_codes)):
+            row_data.append(sample_p2[(i + c_idx - 1) % len(sample_p2)])
+        ws.append(row_data)
+        for col_idx in range(1, len(header_vals) + 1):
+            cell = ws.cell(row=current_row, column=col_idx)
+            cell.font = font_data
+            cell.alignment = align_center
+            cell.border = thin_border
+            cell.fill = fill_p2
+        current_row += 1
+        row_count += 1
+
+    # Part III: max_p3 questions (numbers)
+    sample_p3 = ['446', '-12,5', '3,14', '0,25', '-1', '100']
+    for i in range(1, max_p3 + 1):
+        row_data = [row_count]
+        for c_idx in range(len(exam_codes)):
+            row_data.append(sample_p3[(i + c_idx - 1) % len(sample_p3)])
+        ws.append(row_data)
+        for col_idx in range(1, len(header_vals) + 1):
+            cell = ws.cell(row=current_row, column=col_idx)
+            cell.font = font_data
+            cell.alignment = align_center
+            cell.border = thin_border
+            cell.fill = fill_p3
+        current_row += 1
+        row_count += 1
+
+    # Instructions at the right
+    ws.cell(row=2, column=len(header_vals) + 2, value="HƯỚNG DẪN NHẬP ĐÁP ÁN:").font = font_bold
+    ws.cell(row=3, column=len(header_vals) + 2, value=f"- Phần I ({max_p1} câu đầu): Nhập 1 ký tự A, B, C hoặc D.").font = font_note
+    ws.cell(row=4, column=len(header_vals) + 2, value=f"- Phần II ({max_p2} câu tiếp): Nhập chuỗi 4 ký tự Đ/S theo 4 ý a,b,c,d (VD: ĐSĐS).").font = font_note
+    ws.cell(row=5, column=len(header_vals) + 2, value=f"- Phần III ({max_p3} câu cuối): Nhập số (dấu phẩy thập phân, VD: -12,5 hoặc 446).").font = font_note
+    ws.cell(row=6, column=len(header_vals) + 2, value="- Có thể thêm/sửa/xóa các cột mã đề tùy ý.").font = font_note
+
+    # Column widths
+    ws.column_dimensions['A'].width = 14
+    for c_idx in range(len(exam_codes)):
+        col_letter = openpyxl.utils.get_column_letter(c_idx + 2)
+        ws.column_dimensions[col_letter].width = 16
+
+    out = BytesIO()
+    wb.save(out)
+    return out.getvalue()
 
 
 def export_gradebook_excel(
@@ -88,13 +223,11 @@ def export_gradebook_excel(
 ) -> bytes:
     """
     Export graded submissions into a clean, formatted Excel file (Bang_diem.xlsx).
-    Columns: STT, Số báo danh, Mã đề, Điểm Phần I, Điểm Phần II, Điểm Phần III, Tổng điểm, Ghi chú.
     """
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Bảng Điểm"
 
-    # Styling
     font_title = Font(name="Arial", size=14, bold=True, color="1B365D")
     font_header = Font(name="Arial", size=10, bold=True, color="FFFFFF")
     font_data = Font(name="Arial", size=10)
@@ -115,21 +248,19 @@ def export_gradebook_excel(
     align_left = Alignment(horizontal='left', vertical='center')
     align_right = Alignment(horizontal='right', vertical='center')
 
-    # Title Banner
     ws.merge_cells("A1:H1")
     ws["A1"] = f"BẢNG ĐIỂM CHẤM TRẮC NGHIỆM - {exam_title.upper() if exam_title else 'KỲ THI 2025'}"
     ws["A1"].font = font_title
     ws["A1"].alignment = align_center
     ws.row_dimensions[1].height = 35
 
-    # Headers
     headers = [
         "STT", "Số báo danh", "Mã đề",
         "Điểm Phần I", "Điểm Phần II", "Điểm Phần III",
         "Tổng điểm", "Ghi chú"
     ]
-    ws.append([]) # Row 2 empty
-    ws.append(headers) # Row 3
+    ws.append([])
+    ws.append(headers)
     ws.row_dimensions[3].height = 26
 
     for col_num in range(1, len(headers) + 1):
@@ -139,7 +270,6 @@ def export_gradebook_excel(
         cell.alignment = align_center
         cell.border = thin_border
 
-    # Sort submissions by SBD if present
     sorted_subs = sorted(submissions, key=lambda s: str(s.get('sbd', '')))
 
     row_idx = 4
@@ -160,7 +290,6 @@ def export_gradebook_excel(
         ])
         ws.row_dimensions[row_idx].height = 20
 
-        # Style row cells
         is_even = (idx % 2 == 0)
         for col_num in range(1, 9):
             c = ws.cell(row=row_idx, column=col_num)
@@ -181,7 +310,6 @@ def export_gradebook_excel(
 
         row_idx += 1
 
-    # Auto-fit column widths
     col_widths = [8, 16, 12, 14, 14, 14, 14, 25]
     for col_idx, width in enumerate(col_widths, 1):
         ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = width
@@ -190,3 +318,80 @@ def export_gradebook_excel(
     wb.save(out)
     return out.getvalue()
 
+
+# ==============================================================
+# Supabase Cloud Sync Functions
+# ==============================================================
+
+def list_exams_supabase() -> List[Dict[str, Any]]:
+    """List all saved exams from Supabase table grade_exams."""
+    url, key = get_supabase_config()
+    if not url or not key:
+        return []
+
+    headers = {'apikey': key, 'Authorization': f'Bearer {key}'}
+    try:
+        r = requests.get(
+            f'{url}/rest/v1/grade_exams?select=*&order=updated_at.desc',
+            headers=headers,
+            timeout=10
+        )
+        if r.status_code == 200:
+            return r.json()
+        return []
+    except Exception:
+        return []
+
+
+def save_exam_supabase(exam_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Upsert an exam to Supabase table grade_exams."""
+    url, key = get_supabase_config()
+    if not url or not key:
+        raise ValueError("Chưa cấu hình SUPABASE_URL hoặc SUPABASE_SECRET_KEY.")
+
+    headers = {
+        'apikey': key,
+        'Authorization': f'Bearer {key}',
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation,resolution=merge-duplicates'
+    }
+
+    body = {
+        'title': exam_data.get('title', 'Kỳ thi mới'),
+        'sheet_type': exam_data.get('sheet_type', '2025_math'),
+        'config': exam_data.get('config', {'maxP1': 12, 'maxP2': 4, 'maxP3': 6}),
+        'answer_keys': exam_data.get('answer_keys', {}),
+        'submissions': exam_data.get('submissions', []),
+        'updated_at': 'now()',
+    }
+    if exam_data.get('id'):
+        body['id'] = exam_data['id']
+
+    r = requests.post(
+        f'{url}/rest/v1/grade_exams',
+        headers=headers,
+        json=body,
+        timeout=15
+    )
+    if not r.ok:
+        if r.status_code == 404:
+            raise ValueError("Bảng `grade_exams` chưa được tạo trên Supabase. Vui lòng chạy file `supabase/grade_exams.sql` trong SQL Editor của Supabase.")
+        raise ValueError(f"Không thể lưu lên Supabase (mã {r.status_code}): {r.text[:200]}")
+
+    res = r.json()
+    return res[0] if isinstance(res, list) and len(res) > 0 else res
+
+
+def delete_exam_supabase(exam_id: str) -> bool:
+    """Delete an exam from Supabase."""
+    url, key = get_supabase_config()
+    if not url or not key:
+        raise ValueError("Chưa cấu hình SUPABASE_URL hoặc SUPABASE_SECRET_KEY.")
+
+    headers = {'apikey': key, 'Authorization': f'Bearer {key}'}
+    r = requests.delete(
+        f'{url}/rest/v1/grade_exams?id=eq.{exam_id}',
+        headers=headers,
+        timeout=10
+    )
+    return r.ok

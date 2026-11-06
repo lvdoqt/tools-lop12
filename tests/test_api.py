@@ -218,6 +218,12 @@ class ApiTests(unittest.TestCase):
         self.assertIn("Bang_diem_cham_thi_2025.xlsx", response.headers["Content-Disposition"])
         self.assertTrue(len(response.content) > 1000)
 
+    def test_grade_sample_excel(self):
+        response = self.client.get("/api/grade/sample-excel?max_p1=12&max_p2=4&max_p3=6&codes=101,102")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Mau_dap_an_TNMaker_2025.xlsx", response.headers["Content-Disposition"])
+        self.assertTrue(len(response.content) > 1000)
+
     def test_grade_scan_file(self):
         doc = pymupdf.open("d:/tools/phieu-cham-2025.pdf")
         pix = doc[0].get_pixmap(dpi=150)
