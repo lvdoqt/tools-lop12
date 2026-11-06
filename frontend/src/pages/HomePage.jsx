@@ -10,6 +10,13 @@ const ALL_TOOLS = [
     active: true,
   },
   {
+    id: 'cham-thi', path: '/cham-thi', category: 'edit',
+    icon: '✓', iconClass: 'green', title: 'Chấm trắc nghiệm 2025',
+    desc: 'Chấm phiếu trả lời trắc nghiệm chuẩn Bộ GD&ĐT 2025 bằng camera điện thoại. Nhận diện SBD, Mã đề, 3 phần thi, nạp đáp án TNMaker và xuất Excel.',
+    tags: [{ text: 'Mới', cls: 'new' }, { text: 'Điện thoại' }, { text: '2025' }],
+    active: true,
+  },
+  {
     id: 'word-shuffle', path: '/word-shuffle', category: 'edit',
     icon: 'W', iconClass: 'green', title: 'Trộn đề Word',
     desc: 'Đọc đề Toán 3 phần, nhận diện đáp án gạch chân và lời giải. Trộn nhiều mã đề, tải ZIP Word và Excel đáp án TNmaker.',

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { API_BASE } from '../api';
 import { useFileResult } from '../useFileResult';
 import { unzipSync, zip } from 'fflate';
@@ -68,6 +69,23 @@ export default function WordShufflePage() {
         }
         setProgress(index + 1);
       }
+            try {
+        if (files['Doi_chieu_cau_goc.json']) {
+          const mapping = JSON.parse(new TextDecoder().decode(files['Doi_chieu_cau_goc.json']));
+          const keys = {};
+          for (const [code, parts] of Object.entries(mapping)) {
+            keys[code] = {
+              part1: Object.fromEntries((parts.I || []).map(q => [q.cau_moi, q.dap_an])),
+              part2: Object.fromEntries((parts.II || []).map(q => [q.cau_moi, q.dap_an])),
+              part3: Object.fromEntries((parts.III || []).map(q => [q.cau_moi, q.dap_an])),
+            };
+          }
+          localStorage.setItem('exam_answer_keys_2025', JSON.stringify(keys));
+        }
+      } catch (e) {
+        console.warn('Could not cache keys for grader:', e);
+      }
+
       const archive = await new Promise((resolve, reject) => zip(files, { level: 0 }, (err, data) => err ? reject(err) : resolve(data)));
       signal.throwIfAborted();
       const url = URL.createObjectURL(new Blob([archive], { type: 'application/zip' }));
@@ -133,7 +151,16 @@ export default function WordShufflePage() {
         {!validSettings && <p className="shuffle-invalid">Điền tên Sở/Trường; kiểm tra số đề (1–50) và mã đề (3–4 chữ số, mã cuối không quá 9999).</p>}
         <button className="btn btn-primary btn-lg" disabled={!!busy || !!analysis.errors.length || !validSettings} onClick={generate}>{busy === 'export' ? <><span className="spinner" /> Đã tạo {progress}/{count} mã đề…</> : 'Trộn đề và tạo ZIP'}</button>
         {busy === 'export' && <button className="btn btn-secondary" onClick={() => controller.current?.abort()}>Hủy tạo đề</button>}
-        {result && <div className="alert alert-success" role="status"><span>Đã tạo {result.count} mã đề. <a href={result.download_url} download="Tron-de-Word.zip">Tải ZIP đề Word và Excel đáp án</a></span></div>}
+        {result && <div className="alert alert-success" role="status">
+          <div>
+            <p style={{ margin: 0 }}>Đã tạo {result.count} mã đề. <a href={result.download_url} download="Tron-de-Word.zip" style={{ fontWeight: 700 }}>Tải ZIP đề Word và Excel đáp án</a></p>
+            <div style={{ marginTop: '0.75rem' }}>
+              <Link to="/cham-thi" className="btn btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', textDecoration: 'none', fontWeight: 700 }}>
+                ✓ Mở Chấm trắc nghiệm với {result.count} mã đề vừa tạo
+              </Link>
+            </div>
+          </div>
+        </div>}
         <p className="tex-hint">Excel dùng <a href="https://tnmaker.net/nap-dap-an-phieu-tltn-2025/" target="_blank" rel="noreferrer">mẫu nhập trực tiếp TNmaker 2025</a>, một sheet “Dữ liệu”. Khi nhập, chọn phiếu 2025 và đặt đúng số câu từng phần.</p>
       </section>
     </>}

@@ -1,9 +1,10 @@
-﻿# Công cụ cho Toán
+# Công cụ cho Toán
 
 Bộ tiện ích hỗ trợ chuẩn bị bài giảng, đề thi và tài liệu học tập.
 
 ## Công cụ
 
+- `/cham-thi`: chấm phiếu trả lời trắc nghiệm chuẩn Bộ GD&ĐT 2025 bằng camera điện thoại, nhận diện SBD, mã đề, 3 phần thi, nạp đáp án TNMaker và xuất Excel.
 - `/word-shuffle`: đọc đề Word Toán 3 phần, nhận diện đáp án, trộn câu trong từng phần, tải ZIP đề và Excel TNmaker 2025.
 - `/edit-html`: mở/dán HTML, sửa mã hoặc văn bản trực quan bên trái, xem trước HTML/CSS và LaTeX bên phải; tải mã HTML về máy.
 - `/tex-to-pdf`: biên dịch mã LaTeX hoặc JSON chứa mã TeX thành PDF.
@@ -33,6 +34,21 @@ Excel đối chiếu với [mẫu nhập trực tiếp TNmaker 2025](https://tnm
 Frontend tạo từng mã qua `/api/word-shuffle/export` với cùng phiên trộn rồi ghép ZIP bằng trình duyệt; mỗi response tối đa 4 MB, ZIP cuối có thể lớn hơn. Giữ trang mở đến khi xong; có nút hủy. Backend xử lý trong bộ nhớ, không lưu file sau request. API phân tích: `/api/word-shuffle/analyze`. Cài lại requirements để có `openpyxl`, chạy `npm --prefix frontend install` để có `fflate`.
 
 Kiểm tra: `python -m unittest discover -s tests -p test_word_shuffle.py -v`; khi chạy local server, `python tests/browser_word_shuffle.py` thử đủ 4 mã bằng file `DE-TOAN-MAU-TRON.docx` nếu có.
+
+## Chấm trắc nghiệm 2025
+
+Mở `/cham-thi`, sử dụng camera điện thoại hoặc tải ảnh chụp phiếu làm bài để chấm trắc nghiệm tự động theo mẫu chuẩn của Bộ GD&ĐT từ năm 2025 (`phieu-cham-2025.pdf`).
+
+- **Định vị & Nắn phối cảnh**: Nhận diện 4 mốc vuông đen ở 4 góc phiếu, tự động nắn thẳng phối cảnh về ảnh chuẩn canonical, triệt tiêu độ nghiêng khi chụp từ điện thoại.
+- **Nhận diện dữ liệu**:
+  - Số báo danh (SBD): 8 cột x 10 hàng chữ số 0..9.
+  - Mã đề thi: 4 cột x 10 hàng chữ số 0..9.
+  - Phần I: 40 câu trắc nghiệm 4 lựa chọn (A, B, C, D) — môn Toán chấm 12 câu (0.25 điểm/câu).
+  - Phần II: 8 câu Đúng/Sai (mỗi câu 4 ý a, b, c, d) — môn Toán chấm 4 câu với thang điểm lũy tiến chuẩn Bộ GD&ĐT (đúng 1 ý: 0.1đ, 2 ý: 0.25đ, 3 ý: 0.5đ, 4 ý: 1.0đ).
+  - Phần III: 6 câu trả lời ngắn (dấu âm, dấu phẩy, 4 cột số 0..9) — môn Toán chấm 6 câu (0.5 điểm/câu).
+- **Phát hiện tô mờ / tô đúp**: Gắn cờ cảnh báo nghi ngờ màu vàng khi học sinh tẩy chưa sạch hoặc tô 2 ô cùng câu.
+- **Tích hợp liền mạch với Trộn đề Word**: Sau khi tạo đề ở `/word-shuffle`, bấm nút chuyển sang chấm bài sẽ tự động nạp toàn bộ đáp án của tất cả các mã đề. Có thể nạp trực tiếp file `Dap_an_TNMaker_2025.xlsx`.
+- **Bảng điểm & Xuất Excel**: Lưu danh sách bài đã chấm theo phiên làm việc, thống kê điểm số (trung bình, cao nhất, thấp nhất) và xuất file Excel `Bang_diem_cham_thi_2025.xlsx`. Tải mẫu phiếu in PDF tại chỗ.
 
 ## Kiến trúc ứng dụng
 

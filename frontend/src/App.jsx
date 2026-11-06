@@ -13,6 +13,7 @@ import CasioCalculatorPage from './pages/CasioCalculatorPage';
 const HtmlEditorPage = lazy(() => import('./pages/HtmlEditorPage'));
 const JsonToWordPage = lazy(() => import('./pages/JsonToWordPage'));
 const WordShufflePage = lazy(() => import('./pages/WordShufflePage'));
+const GradePage = lazy(() => import('./pages/GradePage'));
 
 export default function App() {
   return (
@@ -22,6 +23,8 @@ export default function App() {
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/word-shuffle" element={<Suspense fallback={<main className="main-content">Đang mở Trộn đề Word…</main>}><WordShufflePage /></Suspense>} />
+        <Route path="/cham-thi" element={<Suspense fallback={<main className="main-content">Đang mở Chấm trắc nghiệm 2025…</main>}><GradePage /></Suspense>} />
+        <Route path="/grade" element={<Navigate to="/cham-thi" replace />} />
         <Route path="/json-formatter" element={<JsonFormatterPage />} />
         <Route path="/tikz-editor" element={<TikzEditorPage />} />
         <Route path="/tex-to-pdf" element={<TexToPdfPage />} />

@@ -189,6 +189,52 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertTrue(all(not directory.exists() for directory in directories))
 
+    def test_grade_template_pdf(self):
+        response = self.client.get("/api/grade/template-pdf")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["Content-Type"], "application/pdf")
+        self.assertIn("phieu-cham-2025.pdf", response.headers["Content-Disposition"])
+        self.assertTrue(len(response.content) > 1000)
+
+    def test_grade_export_excel(self):
+        payload = {
+            "exam_title": "Toan 12 Thu Nghiem",
+            "submissions": [
+                {
+                    "sbd": "01234567",
+                    "exam_code": "101",
+                    "grading": {
+                        "part1_score": 3.0,
+                        "part2_score": 4.0,
+                        "part3_score": 3.0,
+                        "total_score": 10.0,
+                    },
+                    "uncertain_questions": []
+                }
+            ]
+        }
+        response = self.client.post("/api/grade/export-excel", json=payload)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Bang_diem_cham_thi_2025.xlsx", response.headers["Content-Disposition"])
+        self.assertTrue(len(response.content) > 1000)
+
+    def test_grade_scan_file(self):
+        doc = pymupdf.open("d:/tools/phieu-cham-2025.pdf")
+        pix = doc[0].get_pixmap(dpi=150)
+        sheet_bytes = pix.tobytes("jpeg")
+        response = self.client.post(
+            "/api/grade/scan-file",
+            files={"file": ("sheet.jpg", sheet_bytes, "image/jpeg")},
+            data={"max_p1": "12", "max_p2": "4", "max_p3": "6"}
+        )
+        self.assertEqual(response.status_code, 200)
+        res = response.json()
+        self.assertTrue(res["success"])
+        self.assertIn("sbd", res)
+        self.assertIn("exam_code", res)
+        self.assertIn("grading", res)
+        self.assertIn("annotated_image", res)
+
 
 if __name__ == "__main__":
     unittest.main()

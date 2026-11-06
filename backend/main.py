@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, JSONResponse
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
+from typing import Any, Dict, List, Optional
 import pymupdf
 from lxml import etree
 
@@ -29,6 +30,8 @@ if __package__:
     from .services.word_shuffle import Exam, export_shuffle, MAX_UPLOAD
     from .services.word_math import compile_math
     from .services.pdf_header import add_pdf_header
+    from .services.omr_engine_2025 import process_omr_sheet
+    from .services.grade_manager import parse_tnmaker_excel, export_gradebook_excel
 else:
     from services.tikz_renderer import render_tikz
     from services.latex_quiz import parse_quiz
@@ -38,6 +41,8 @@ else:
     from services.word_shuffle import Exam, export_shuffle, MAX_UPLOAD
     from services.word_math import compile_math
     from services.pdf_header import add_pdf_header
+    from services.omr_engine_2025 import process_omr_sheet
+    from services.grade_manager import parse_tnmaker_excel, export_gradebook_excel
 
 MAX_PDF_BYTES = 4 * 1024 * 1024
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -497,6 +502,119 @@ async def pdf_add_header(
         logger.exception("Failed to add PDF header")
         raise HTTPException(500, "Không thể gắn header vào PDF. Hãy kiểm tra lại file và thử lại.")
 
+
+
+# ===================================================
+#   CHẤM THI TRẮC NGHIỆM 2025 (OMR GRADER)
+# ===================================================
+
+class ScanRequest(BaseModel):
+    image: str = Field(..., description="Base64 encoded photo or data URL")
+    answer_key: Optional[Dict[str, Any]] = None
+    max_p1: int = 40
+    max_p2: int = 8
+    max_p3: int = 6
+
+
+class ExportExcelRequest(BaseModel):
+    exam_title: str = "Thi thử 2025"
+    submissions: List[Dict[str, Any]]
+
+
+ScanRequest.model_rebuild()
+ExportExcelRequest.model_rebuild()
+
+
+@app.post("/api/grade/scan")
+async def grade_scan(request: ScanRequest):
+    try:
+        result = await run_in_threadpool(
+            process_omr_sheet,
+            request.image,
+            answer_key=request.answer_key,
+            max_p1=request.max_p1,
+            max_p2=request.max_p2,
+            max_p3=request.max_p3,
+        )
+        return JSONResponse(result)
+    except Exception as exc:
+        logger.exception("Error processing OMR sheet")
+        raise HTTPException(400, f"Không thể xử lý phiếu chấm: {str(exc)}")
+
+
+@app.post("/api/grade/scan-file")
+async def grade_scan_file(
+    file: UploadFile = File(...),
+    answer_key: Optional[str] = Form(None),
+    max_p1: int = Form(40),
+    max_p2: int = Form(8),
+    max_p3: int = Form(6),
+):
+    try:
+        content = await file.read()
+        key_dict = json.loads(answer_key) if answer_key else None
+        result = await run_in_threadpool(
+            process_omr_sheet,
+            content,
+            answer_key=key_dict,
+            max_p1=max_p1,
+            max_p2=max_p2,
+            max_p3=max_p3,
+        )
+        return JSONResponse(result)
+    except Exception as exc:
+        logger.exception("Error processing uploaded sheet")
+        raise HTTPException(400, f"Không thể xử lý phiếu chấm: {str(exc)}")
+
+
+@app.post("/api/grade/import-answers")
+async def import_answers_excel(file: UploadFile = File(...)):
+    try:
+        content = await file.read()
+        parsed = await run_in_threadpool(parse_tnmaker_excel, content)
+        return JSONResponse({"success": True, "answer_keys": parsed})
+    except Exception as exc:
+        logger.exception("Error parsing TNMaker Excel")
+        raise HTTPException(400, f"Lỗi đọc file Excel đáp án: {str(exc)}")
+
+
+@app.post("/api/grade/export-excel")
+async def export_excel_gradebook(request: ExportExcelRequest):
+    try:
+        excel_bytes = await run_in_threadpool(
+            export_gradebook_excel,
+            request.exam_title,
+            request.submissions,
+        )
+        return Response(
+            excel_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": 'attachment; filename="Bang_diem_cham_thi_2025.xlsx"',
+                "Cache-Control": "no-store",
+            }
+        )
+    except Exception as exc:
+        logger.exception("Error exporting gradebook")
+        raise HTTPException(500, f"Lỗi xuất bảng điểm: {str(exc)}")
+
+
+@app.get("/api/grade/template-pdf")
+async def get_template_pdf():
+    pdf_path = Path("D:/tools/phieu-cham-2025.pdf")
+    if not pdf_path.exists():
+        pdf_path = Path(__file__).resolve().parent.parent / "phieu-cham-2025.pdf"
+    if not pdf_path.exists():
+        raise HTTPException(404, "Không tìm thấy tệp phiếu mẫu PDF.")
+    content = pdf_path.read_bytes()
+    return Response(
+        content,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": 'attachment; filename="phieu-cham-2025.pdf"',
+            "Cache-Control": "public, max-age=86400",
+        }
+    )
 
 
 if __name__ == "__main__":

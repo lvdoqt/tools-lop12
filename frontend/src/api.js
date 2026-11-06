@@ -92,4 +92,62 @@ export const api = {
     const res = await fetch(`${API_BASE}/health`);
     return res.json();
   },
+
+  // ===== Chấm thi 2025 =====
+  scanSheet: async (imageInput, answerKey = null, maxP1 = 40, maxP2 = 8, maxP3 = 6) => {
+    let res;
+    if (typeof imageInput === 'string') {
+      res = await fetch(`${API_BASE}/grade/scan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image: imageInput,
+          answer_key: answerKey,
+          max_p1: maxP1,
+          max_p2: maxP2,
+          max_p3: maxP3,
+        }),
+      });
+    } else {
+      const formData = new FormData();
+      formData.append('file', imageInput);
+      if (answerKey) formData.append('answer_key', JSON.stringify(answerKey));
+      formData.append('max_p1', String(maxP1));
+      formData.append('max_p2', String(maxP2));
+      formData.append('max_p3', String(maxP3));
+      res = await fetch(`${API_BASE}/grade/scan-file`, {
+        method: 'POST',
+        body: formData,
+      });
+    }
+    await checkResponse(res, 'Không thể chấm phiếu. Hãy kiểm tra ảnh có đủ 4 góc định vị.');
+    return res.json();
+  },
+
+  importAnswersExcel: async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${API_BASE}/grade/import-answers`, {
+      method: 'POST',
+      body: formData,
+    });
+    await checkResponse(res, 'Không thể đọc file đáp án Excel TNMaker.');
+    return res.json();
+  },
+
+  exportGradeExcel: async (examTitle, submissions) => {
+    const res = await fetch(`${API_BASE}/grade/export-excel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        exam_title: examTitle,
+        submissions,
+      }),
+    });
+    await checkResponse(res, 'Không thể xuất bảng điểm Excel.');
+    const blob = await res.blob();
+    return URL.createObjectURL(blob);
+  },
+
+  getTemplatePdfUrl: () => `${API_BASE}/grade/template-pdf`,
 };
