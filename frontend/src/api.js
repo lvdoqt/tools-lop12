@@ -94,7 +94,7 @@ export const api = {
   },
 
   // ===== Chấm thi 2025 =====
-  scanSheet: async (imageInput, answerKey = null, maxP1 = 40, maxP2 = 8, maxP3 = 6) => {
+  scanSheet: async (imageInput, answerKey = null, maxP1 = 40, maxP2 = 8, maxP3 = 6, sheetType = '2025_math') => {
     let res;
     if (typeof imageInput === 'string') {
       res = await fetch(`${API_BASE}/grade/scan`, {
@@ -106,6 +106,7 @@ export const api = {
           max_p1: maxP1,
           max_p2: maxP2,
           max_p3: maxP3,
+          sheet_type: sheetType,
         }),
       });
     } else {
@@ -115,6 +116,7 @@ export const api = {
       formData.append('max_p1', String(maxP1));
       formData.append('max_p2', String(maxP2));
       formData.append('max_p3', String(maxP3));
+      formData.append('sheet_type', sheetType);
       res = await fetch(`${API_BASE}/grade/scan-file`, {
         method: 'POST',
         body: formData,
@@ -149,7 +151,14 @@ export const api = {
     return URL.createObjectURL(blob);
   },
 
-  getTemplatePdfUrl: () => `${API_BASE}/grade/template-pdf`,
+  getGradeTemplates: async () => {
+    const res = await fetch(`${API_BASE}/grade/templates`);
+    if (!res.ok) return [];
+    return res.json().catch(() => []);
+  },
+
+  getTemplatePdfUrl: (sheetType = '2025_math') =>
+    `${API_BASE}/grade/template-pdf?sheet_type=${encodeURIComponent(sheetType)}`,
 
   getSampleExcelUrl: (maxP1 = 12, maxP2 = 4, maxP3 = 6, codes = '101,102,103,104') =>
     `${API_BASE}/grade/sample-excel?max_p1=${maxP1}&max_p2=${maxP2}&max_p3=${maxP3}&codes=${encodeURIComponent(codes)}`,

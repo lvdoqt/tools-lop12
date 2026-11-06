@@ -211,10 +211,15 @@ export default function GradePage() {
 
   // Camera & Scanning State
   const videoRef = useRef(null);
+  const cameraInputRef = useRef(null);
+  const galleryInputRef = useRef(null);
+
   const [cameraActive, setCameraActive] = useState(false);
   const [facingMode, setFacingMode] = useState('environment');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isStartingCamera, setIsStartingCamera] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
+  const [cameraError, setCameraError] = useState(null);
   const [currentResult, setCurrentResult] = useState(null);
   const [selectedSubForView, setSelectedSubForView] = useState(null);
 
@@ -234,7 +239,10 @@ export default function GradePage() {
   // Handle camera lifecycle
   useEffect(() => {
     if (activeTab === 'scan' && !currentResult) {
-      startCamera();
+      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      if (window.isSecureContext || isLocal) {
+        startCamera();
+      }
     } else {
       stopCamera();
     }
@@ -244,27 +252,91 @@ export default function GradePage() {
   }, [activeTab, facingMode, currentResult]);
 
   const startCamera = async () => {
-    try {
-      setErrorMessage(null);
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: { ideal: facingMode },
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
-          },
-          audio: false,
-        });
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play();
-          setCameraActive(true);
-        }
-      }
-    } catch (err) {
-      console.warn('Cannot open live camera stream:', err);
+    setIsStartingCamera(true);
+    setCameraError(null);
+    setErrorMessage(null);
+
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    if (!window.isSecureContext && !isLocal) {
       setCameraActive(false);
+      setIsStartingCamera(false);
+      setCameraError(
+        'Trình duyệt điện thoại chặn WebRTC trực tiếp khi truy cập qua mạng LAN (HTTP không có SSL). Bạn hãy bấm nút "Chụp ảnh bài thi" màu xanh bên dưới để mở thẳng Camera máy chụp siêu nét và tự động chấm!'
+      );
+      return;
     }
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setCameraActive(false);
+      setIsStartingCamera(false);
+      setCameraError(
+        'Trình duyệt không hỗ trợ WebRTC hoặc quyền truy cập máy ảnh bị chặn. Hãy bấm nút "Chụp ảnh bài thi" để dùng Camera gốc của máy.'
+      );
+      return;
+    }
+
+    const constraintSets = [
+      {
+        video: {
+          facingMode: { ideal: facingMode },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
+        audio: false,
+      },
+      {
+        video: { facingMode: { ideal: facingMode } },
+        audio: false,
+      },
+      {
+        video: { facingMode: facingMode },
+        audio: false,
+      },
+      {
+        video: true,
+        audio: false,
+      },
+    ];
+
+    let stream = null;
+    let lastErr = null;
+
+    for (const constraints of constraintSets) {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        if (stream) break;
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+
+    if (stream && videoRef.current) {
+      videoRef.current.srcObject = stream;
+      videoRef.current.setAttribute('autoplay', 'true');
+      videoRef.current.setAttribute('playsinline', 'true');
+      videoRef.current.setAttribute('muted', 'true');
+      try {
+        await videoRef.current.play();
+      } catch (e) {
+        console.warn('Video play error:', e);
+      }
+      setCameraActive(true);
+      setCameraError(null);
+    } else {
+      setCameraActive(false);
+      let msg = 'Không thể mở Camera trực tiếp: ';
+      if (lastErr?.name === 'NotAllowedError' || lastErr?.name === 'PermissionDeniedError') {
+        msg += 'Bạn chưa cấp quyền máy ảnh trong trình duyệt. Hãy cho phép quyền hoặc bấm nút "Chụp ảnh bài thi".';
+      } else if (lastErr?.name === 'NotFoundError' || lastErr?.name === 'DevicesNotFoundError') {
+        msg += 'Không tìm thấy thiết bị camera trên máy.';
+      } else if (lastErr?.name === 'NotReadableError' || lastErr?.name === 'TrackStartError') {
+        msg += 'Camera đang được ứng dụng khác sử dụng.';
+      } else {
+        msg += (lastErr?.message || 'Trình duyệt không cho phép.') + ' 👉 Bạn hãy dùng nút "Chụp ảnh bài thi" bên dưới.';
+      }
+      setCameraError(msg);
+    }
+    setIsStartingCamera(false);
   };
 
   const stopCamera = () => {
@@ -278,6 +350,16 @@ export default function GradePage() {
 
   const toggleCameraFacing = () => {
     setFacingMode(prev => (prev === 'environment' ? 'user' : 'environment'));
+  };
+
+  // Primary capture handler: if camera stream is active, capture frame; else open native camera input
+  const handlePrimaryCapture = () => {
+    if (isProcessing) return;
+    if (cameraActive) {
+      handleCaptureFrame();
+    } else {
+      cameraInputRef.current?.click();
+    }
   };
 
   // Capture current frame from video and send to OMR engine
@@ -300,7 +382,8 @@ export default function GradePage() {
         answerKeys,
         currentExam.config.maxP1,
         currentExam.config.maxP2,
-        currentExam.config.maxP3
+        currentExam.config.maxP3,
+        currentExam.sheet_type || '2025_math'
       );
 
       setCurrentResult(res);
@@ -326,7 +409,8 @@ export default function GradePage() {
         answerKeys,
         currentExam.config.maxP1,
         currentExam.config.maxP2,
-        currentExam.config.maxP3
+        currentExam.config.maxP3,
+        currentExam.sheet_type || '2025_math'
       );
 
       setCurrentResult(res);
@@ -426,6 +510,22 @@ export default function GradePage() {
     }
   };
 
+  // Helpers for sheet template names and PDF files
+  const getTemplatePdfFilename = (type) => {
+    if (type === 'tndo_a20') return 'TNDO-A20-v2.pdf';
+    if (type === 'tndo_a40') return 'TNDO-A40-v2.pdf';
+    if (type === 'tndo_3p_2026') return 'TNDO-3P-2026-v3.pdf';
+    return 'phieu-cham-2025.pdf';
+  };
+
+  const getSheetTypeName = (type) => {
+    if (type === 'tndo_a20') return 'TN - DO · A4 20 câu';
+    if (type === 'tndo_a40') return 'TN - DO · A4 40 câu';
+    if (type === 'tndo_3p_2026') return 'TN - DO 2026 (3 phần)';
+    if (type === '2025_full') return 'Bộ GD&ĐT 2025 Đầy đủ';
+    return 'Bộ GD&ĐT 2025 Toán';
+  };
+
   // Handle Sheet Type Preset selection
   const handleSheetTypeChange = (type) => {
     if (type === '2025_math') {
@@ -434,6 +534,21 @@ export default function GradePage() {
         config: { maxP1: 12, maxP2: 4, maxP3: 6 },
       });
     } else if (type === '2025_full') {
+      updateCurrentExam({
+        sheet_type: type,
+        config: { maxP1: 40, maxP2: 8, maxP3: 6 },
+      });
+    } else if (type === 'tndo_a20') {
+      updateCurrentExam({
+        sheet_type: type,
+        config: { maxP1: 20, maxP2: 0, maxP3: 0 },
+      });
+    } else if (type === 'tndo_a40') {
+      updateCurrentExam({
+        sheet_type: type,
+        config: { maxP1: 40, maxP2: 0, maxP3: 0 },
+      });
+    } else if (type === 'tndo_3p_2026') {
       updateCurrentExam({
         sheet_type: type,
         config: { maxP1: 40, maxP2: 8, maxP3: 6 },
@@ -484,13 +599,13 @@ export default function GradePage() {
 
           <div className="grade-top-actions">
             <a
-              href={api.getTemplatePdfUrl()}
-              download="phieu-cham-2025.pdf"
+              href={api.getTemplatePdfUrl(currentExam.sheet_type || '2025_math')}
+              download={getTemplatePdfFilename(currentExam.sheet_type)}
               className="btn-secondary"
-              title="Tải phiếu in mẫu chuẩn PDF"
+              title="Tải phiếu in mẫu chuẩn PDF cho kỳ thi này"
             >
               <Download size={16} />
-              In phiếu chuẩn PDF
+              In phiếu PDF ({getSheetTypeName(currentExam.sheet_type)})
             </a>
           </div>
         </header>
@@ -651,75 +766,178 @@ export default function GradePage() {
               <div className="viewport-card">
                 <div className="viewport-screen">
                   {cameraActive ? (
-                    <video
-                      ref={videoRef}
-                      playsInline
-                      muted
-                      className="viewport-video"
-                    />
+                    <>
+                      <video
+                        ref={videoRef}
+                        autoPlay
+                        playsInline
+                        muted
+                        className="viewport-video"
+                      />
+                      <div className="scanner-laser" />
+                    </>
                   ) : (
-                    <div style={{ color: '#94a3b8', textAlign: 'center', padding: '2rem' }}>
-                      <Camera size={48} style={{ margin: '0 auto 1rem', opacity: 0.5 }} />
-                      <p>Camera chưa kích hoạt hoặc không có quyền truy cập.</p>
-                      <button className="btn-primary" onClick={startCamera}>
-                        Bật camera
-                      </button>
-                    </div>
-                  )}
+                    <div className="camera-capture-box">
+                      <div className="camera-box-inner">
+                        <div className="camera-box-badge">
+                          <Camera size={18} />
+                          <span>Khung Chụp: {getSheetTypeName(currentExam.sheet_type)}</span>
+                        </div>
 
-                  {/* 4 Corner Reticle Alignment Guide */}
-                  {cameraActive && (
-                    <div className="viewport-reticle">
-                      <div className="reticle-corner reticle-tl" />
-                      <div className="reticle-corner reticle-tr" />
-                      <div className="reticle-corner reticle-bl" />
-                      <div className="reticle-corner reticle-br" />
-                      <div className="reticle-guide-text">
-                        Căn 4 góc đen của phiếu vào khung và bấm Chụp
+                        {/* Ô Chụp Ảnh Chính (Nút to nổi bật mở Camera điện thoại) */}
+                        <button
+                          type="button"
+                          className="btn-trigger-camera-main"
+                          onClick={() => cameraInputRef.current?.click()}
+                          title="Bấm để mở Camera chụp ảnh phiếu chấm"
+                        >
+                          <div className="btn-camera-icon-wrap">
+                            <Camera size={36} />
+                          </div>
+                          <div className="btn-camera-text-wrap">
+                            <span className="btn-camera-title">📸 Bấm vào đây để Chụp ảnh bài thi</span>
+                            <span className="btn-camera-desc">Mở Camera điện thoại chụp cực nét & tự động chấm ngay</span>
+                          </div>
+                        </button>
+
+                        {/* Nút phụ: Thư viện & Thử bật camera trực tiếp */}
+                        <div className="camera-box-secondary-row">
+                          <button
+                            type="button"
+                            className="btn-secondary-action"
+                            onClick={() => galleryInputRef.current?.click()}
+                            title="Chọn file ảnh phiếu đã chụp sẵn trong máy"
+                          >
+                            <Upload size={16} />
+                            Chọn ảnh từ thư viện
+                          </button>
+
+                          <button
+                            type="button"
+                            className="btn-secondary-action"
+                            onClick={startCamera}
+                            disabled={isStartingCamera}
+                            title="Thử kích hoạt luồng camera trực tiếp trong trình duyệt"
+                          >
+                            {isStartingCamera ? (
+                              <>
+                                <RefreshCw size={16} className="spin" />
+                                Đang kết nối…
+                              </>
+                            ) : (
+                              <>
+                                <RotateCcw size={16} />
+                                Bật Camera trực tiếp
+                              </>
+                            )}
+                          </button>
+                        </div>
+
+                        {/* Thông báo lý do nếu camera trực tiếp không mở được */}
+                        {cameraError && (
+                          <div className="camera-warning-box">
+                            <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: '2px' }} />
+                            <div>{cameraError}</div>
+                          </div>
+                        )}
+
+                        <div className="camera-tip-pill">
+                          💡 Mẹo: Hướng camera thẳng góc, lấy trọn <strong>4 ô vuông đen ở 4 góc</strong> của phiếu để đạt độ chuẩn xác 100%.
+                        </div>
                       </div>
                     </div>
                   )}
+
+                  {/* 4 Corner Reticle Alignment Guide — LUÔN HIỂN THỊ ĐỂ ĐỊNH HƯỚNG */}
+                  <div className="viewport-reticle">
+                    <div className="reticle-corner reticle-tl" />
+                    <div className="reticle-corner reticle-tr" />
+                    <div className="reticle-corner reticle-bl" />
+                    <div className="reticle-corner reticle-br" />
+                    <div className="reticle-guide-text">
+                      {cameraActive
+                        ? `Căn 4 góc đen phiếu [${getSheetTypeName(currentExam.sheet_type)}] vào 4 góc khung rồi bấm Chụp`
+                        : `Khung quét phiếu: ${getSheetTypeName(currentExam.sheet_type)}`}
+                    </div>
+                  </div>
                 </div>
 
-                {/* Camera Controls */}
+                {/* Hidden File Inputs */}
+                <input
+                  ref={cameraInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handleFileUpload}
+                  style={{ display: 'none' }}
+                  disabled={isProcessing}
+                />
+                <input
+                  ref={galleryInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileUpload}
+                  style={{ display: 'none' }}
+                  disabled={isProcessing}
+                />
+
+                {/* Camera Controls Bar */}
                 <div className="viewport-controls">
-                  <button
-                    className="btn-icon-secondary"
-                    onClick={toggleCameraFacing}
-                    title="Đổi camera trước / sau"
-                  >
-                    <RotateCcw size={20} />
-                  </button>
+                  {cameraActive ? (
+                    <button
+                      className="btn-icon-secondary"
+                      onClick={toggleCameraFacing}
+                      title="Đổi camera trước / sau"
+                    >
+                      <RotateCcw size={20} />
+                    </button>
+                  ) : (
+                    <button
+                      className="btn-icon-secondary"
+                      onClick={startCamera}
+                      disabled={isStartingCamera}
+                      title="Thử bật Camera trực tiếp (WebRTC)"
+                    >
+                      {isStartingCamera ? (
+                        <RefreshCw size={20} className="spin" />
+                      ) : (
+                        <RotateCcw size={20} />
+                      )}
+                    </button>
+                  )}
 
                   <button
                     className="btn-capture-big"
-                    onClick={handleCaptureFrame}
-                    disabled={isProcessing || !cameraActive}
+                    onClick={handlePrimaryCapture}
+                    disabled={isProcessing}
+                    title={cameraActive ? 'Chụp ảnh từ video và chấm bài' : 'Mở máy ảnh chụp và chấm bài ngay'}
                   >
                     {isProcessing ? (
                       <>
                         <RefreshCw size={20} className="spin" />
                         Đang chấm bài…
                       </>
-                    ) : (
+                    ) : cameraActive ? (
                       <>
                         <Camera size={20} />
                         Chụp & Chấm
                       </>
+                    ) : (
+                      <>
+                        <Camera size={22} />
+                        📸 Mở Camera chụp & chấm
+                      </>
                     )}
                   </button>
 
-                  <label className="btn-icon-secondary" title="Tải ảnh từ máy / Chụp bằng camera gốc">
+                  <button
+                    className="btn-icon-secondary"
+                    onClick={() => galleryInputRef.current?.click()}
+                    title="Chọn ảnh từ thư viện máy"
+                    disabled={isProcessing}
+                  >
                     <Upload size={20} />
-                    <input
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      onChange={handleFileUpload}
-                      style={{ display: 'none' }}
-                      disabled={isProcessing}
-                    />
-                  </label>
+                  </button>
                 </div>
               </div>
             ) : (
@@ -748,20 +966,45 @@ export default function GradePage() {
                 </div>
 
                 {/* Score Breakdown */}
-                <div className="score-breakdown">
-                  <div className="breakdown-item">
-                    <span>Phần I (MCQ)</span>
-                    <strong>{currentResult.grading?.part1_score} đ</strong>
+                {currentExam.config.maxP2 === 0 && currentExam.config.maxP3 === 0 ? (
+                  <div className="score-breakdown">
+                    <div className="breakdown-item">
+                      <span>Điểm trắc nghiệm</span>
+                      <strong>{currentResult.grading?.part1_score} đ</strong>
+                    </div>
+                    <div className="breakdown-item">
+                      <span>Số câu đúng</span>
+                      <strong>
+                        {currentResult.grading?.part1_results?.filter(r => r.is_correct).length || 0} / {currentResult.grading?.part1_results?.length || currentExam.config.maxP1}
+                      </strong>
+                    </div>
+                    <div className="breakdown-item">
+                      <span>Tỷ lệ đạt</span>
+                      <strong>
+                        {(
+                          ((currentResult.grading?.part1_results?.filter(r => r.is_correct).length || 0) /
+                            Math.max(1, currentResult.grading?.part1_results?.length || currentExam.config.maxP1)) *
+                          100
+                        ).toFixed(0)}%
+                      </strong>
+                    </div>
                   </div>
-                  <div className="breakdown-item">
-                    <span>Phần II (Đ/S)</span>
-                    <strong>{currentResult.grading?.part2_score} đ</strong>
+                ) : (
+                  <div className="score-breakdown">
+                    <div className="breakdown-item">
+                      <span>Phần I (MCQ)</span>
+                      <strong>{currentResult.grading?.part1_score} đ</strong>
+                    </div>
+                    <div className="breakdown-item">
+                      <span>Phần II (Đ/S)</span>
+                      <strong>{currentResult.grading?.part2_score} đ</strong>
+                    </div>
+                    <div className="breakdown-item">
+                      <span>Phần III (Điền số)</span>
+                      <strong>{currentResult.grading?.part3_score} đ</strong>
+                    </div>
                   </div>
-                  <div className="breakdown-item">
-                    <span>Phần III (Điền số)</span>
-                    <strong>{currentResult.grading?.part3_score} đ</strong>
-                  </div>
-                </div>
+                )}
 
                 {/* Uncertain Questions Notice */}
                 {currentResult.uncertain_questions && currentResult.uncertain_questions.length > 0 && (
@@ -1025,11 +1268,50 @@ export default function GradePage() {
                     onChange={e => handleSheetTypeChange(e.target.value)}
                     style={{ width: '100%', padding: '0.55rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1', fontWeight: 600 }}
                   >
-                    <option value="2025_math">Phiếu chuẩn Bộ GD&ĐT 2025 — Toán (12 - 4 - 6 câu)</option>
+                    <option value="2025_math">Phiếu chuẩn Bộ GD&ĐT 2025 — Môn Toán (12 - 4 - 6 câu)</option>
                     <option value="2025_full">Phiếu chuẩn Bộ GD&ĐT 2025 — Đầy đủ (40 - 8 - 6 câu)</option>
-                    <option value="2025_custom">Phiếu 2025 — Tùy chỉnh số câu theo ý muốn</option>
+                    <option value="tndo_a20">Phiếu TN - DO · A4 20 câu (20 câu trắc nghiệm A,B,C,D - SBD 6 số - MDT 3 số)</option>
+                    <option value="tndo_a40">Phiếu TN - DO · A4 40 câu (40 câu trắc nghiệm A,B,C,D - SBD 6 số - MDT 3 số)</option>
+                    <option value="tndo_3p_2026">Phiếu TN - DO 2026 — Chuẩn 3 phần (40 MCQ + 8 Đ/S + 6 Điền số)</option>
+                    <option value="custom">Phiếu 2025 — Tùy chỉnh số câu theo ý muốn</option>
                   </select>
                 </div>
+              </div>
+
+              {/* Thông tin chi tiết về loại phiếu đã chọn */}
+              <div
+                style={{
+                  marginTop: '0.85rem',
+                  padding: '0.75rem 1rem',
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '0.5rem',
+                  fontSize: '0.85rem',
+                  color: '#334155',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '0.5rem',
+                }}
+              >
+                <div>
+                  <strong>Đặc tính mẫu phiếu: </strong>
+                  {currentExam.sheet_type === 'tndo_a20' && 'Khổ A4 · 20 câu trắc nghiệm · SBD 6 số (0-9) · Mã đề 3 số (0-9). Điểm: 0.5 đ/câu.'}
+                  {currentExam.sheet_type === 'tndo_a40' && 'Khổ A4 · 40 câu trắc nghiệm · SBD 6 số (0-9) · Mã đề 3 số (0-9). Điểm: 0.25 đ/câu.'}
+                  {currentExam.sheet_type === 'tndo_3p_2026' && 'Khổ A4 · Cấu trúc 3 phần chuẩn 2026: 40 MCQ + 8 Đúng/Sai + 6 Trả lời ngắn. SBD 8 số, Mã đề 4 số.'}
+                  {(currentExam.sheet_type === '2025_math' || currentExam.sheet_type === '2025_full' || currentExam.sheet_type === '2025_standard' || currentExam.sheet_type === 'custom') &&
+                    'Phiếu chuẩn Bộ GD&ĐT 2025 (phieu-cham-2025.pdf) · SBD 8 số, Mã đề 4 số · 3 phần thi.'}
+                </div>
+                <a
+                  href={api.getTemplatePdfUrl(currentExam.sheet_type || '2025_math')}
+                  download={getTemplatePdfFilename(currentExam.sheet_type)}
+                  className="btn-secondary"
+                  style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+                >
+                  <Download size={14} />
+                  Tải file in PDF mẫu phiếu này
+                </a>
               </div>
 
               {/* Number of questions per part (Selectable) */}
@@ -1046,8 +1328,8 @@ export default function GradePage() {
                     }))}
                     style={{ width: '100%', padding: '0.5rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1' }}
                   >
-                    {[10, 12, 15, 20, 25, 30, 35, 40].map(n => (
-                      <option key={n} value={n}>{n} câu {n === 12 ? '(Chuẩn môn Toán)' : ''}</option>
+                    {[5, 10, 12, 15, 20, 25, 30, 35, 40].map(n => (
+                      <option key={n} value={n}>{n} câu {n === 12 ? '(Toán 2025)' : n === 20 ? '(Chuẩn A20)' : n === 40 ? '(Chuẩn A40/2026)' : ''}</option>
                     ))}
                   </select>
                 </div>
@@ -1064,7 +1346,7 @@ export default function GradePage() {
                     }))}
                     style={{ width: '100%', padding: '0.5rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1' }}
                   >
-                    <option value={0}>0 câu (Không có Phần II)</option>
+                    <option value={0}>0 câu (Phiếu A20, A40 hoặc không có P.II)</option>
                     <option value={2}>2 câu</option>
                     <option value={4}>4 câu (Chuẩn môn Toán)</option>
                     <option value={6}>6 câu</option>
@@ -1084,7 +1366,7 @@ export default function GradePage() {
                     }))}
                     style={{ width: '100%', padding: '0.5rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1' }}
                   >
-                    <option value={0}>0 câu (Không có Phần III)</option>
+                    <option value={0}>0 câu (Phiếu A20, A40 hoặc không có P.III)</option>
                     <option value={2}>2 câu</option>
                     <option value={4}>4 câu</option>
                     <option value={6}>6 câu (Chuẩn môn Toán / Tối đa)</option>

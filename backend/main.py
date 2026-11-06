@@ -12,7 +12,7 @@ import zipfile
 import json
 from pathlib import Path
 
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, JSONResponse
 from starlette.concurrency import run_in_threadpool
@@ -31,6 +31,7 @@ if __package__:
     from .services.word_math import compile_math
     from .services.pdf_header import add_pdf_header
     from .services.omr_engine_2025 import process_omr_sheet
+    from .services.sheet_templates import get_sheet_template, list_sheet_templates
     from .services.grade_manager import (
         parse_tnmaker_excel,
         export_gradebook_excel,
@@ -49,6 +50,7 @@ else:
     from services.word_math import compile_math
     from services.pdf_header import add_pdf_header
     from services.omr_engine_2025 import process_omr_sheet
+    from services.sheet_templates import get_sheet_template, list_sheet_templates
     from services.grade_manager import (
         parse_tnmaker_excel,
         export_gradebook_excel,
@@ -528,6 +530,7 @@ class ScanRequest(BaseModel):
     max_p1: int = 40
     max_p2: int = 8
     max_p3: int = 6
+    sheet_type: Optional[str] = "2025_math"
 
 
 class ExportExcelRequest(BaseModel):
@@ -549,6 +552,7 @@ async def grade_scan(request: ScanRequest):
             max_p1=request.max_p1,
             max_p2=request.max_p2,
             max_p3=request.max_p3,
+            sheet_type=request.sheet_type,
         )
         return JSONResponse(result)
     except Exception as exc:
@@ -563,6 +567,7 @@ async def grade_scan_file(
     max_p1: int = Form(40),
     max_p2: int = Form(8),
     max_p3: int = Form(6),
+    sheet_type: Optional[str] = Form("2025_math"),
 ):
     try:
         content = await file.read()
@@ -574,6 +579,7 @@ async def grade_scan_file(
             max_p1=max_p1,
             max_p2=max_p2,
             max_p3=max_p3,
+            sheet_type=sheet_type,
         )
         return JSONResponse(result)
     except Exception as exc:
@@ -613,19 +619,31 @@ async def export_excel_gradebook(request: ExportExcelRequest):
         raise HTTPException(500, f"Lỗi xuất bảng điểm: {str(exc)}")
 
 
+@app.get("/api/grade/templates")
+async def get_grade_templates():
+    """Return list of all registered answer sheet templates."""
+    return JSONResponse(list_sheet_templates())
+
+
 @app.get("/api/grade/template-pdf")
-async def get_template_pdf():
-    pdf_path = Path("D:/tools/phieu-cham-2025.pdf")
+async def get_template_pdf(sheet_type: str = Query("2025_math")):
+    """Return downloadable PDF template according to selected sheet_type."""
+    tmpl = get_sheet_template(sheet_type)
+    pdf_path = Path(tmpl.pdf_path)
+    if not pdf_path.exists():
+        pdf_path = Path("D:/tools/phieu-cham-2025.pdf")
     if not pdf_path.exists():
         pdf_path = Path(__file__).resolve().parent.parent / "phieu-cham-2025.pdf"
     if not pdf_path.exists():
         raise HTTPException(404, "Không tìm thấy tệp phiếu mẫu PDF.")
+
     content = pdf_path.read_bytes()
+    filename = pdf_path.name
     return Response(
         content,
         media_type="application/pdf",
         headers={
-            "Content-Disposition": 'attachment; filename="phieu-cham-2025.pdf"',
+            "Content-Disposition": f'attachment; filename="{filename}"',
             "Cache-Control": "public, max-age=86400",
         }
     )

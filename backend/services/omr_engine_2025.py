@@ -35,6 +35,7 @@ try:
         get_part3_grid,
         get_sbd_grid,
     )
+    from .sheet_templates import SheetTemplate, get_sheet_template
 except ImportError:
     from services.sheet_2025_template import (
         CANONICAL_HEIGHT,
@@ -49,6 +50,7 @@ except ImportError:
         get_part3_grid,
         get_sbd_grid,
     )
+    from services.sheet_templates import SheetTemplate, get_sheet_template
 
 
 # -------------------------------------------------------------
@@ -56,7 +58,9 @@ except ImportError:
 # -------------------------------------------------------------
 
 def load_image_from_bytes_or_b64(input_data: Any) -> np.ndarray:
-    """Decode raw bytes, file-like object, or base64 string to BGR numpy array with EXIF transpose."""
+    """Decode raw bytes, file-like object, numpy array, or base64 string to BGR numpy array with EXIF transpose."""
+    if isinstance(input_data, np.ndarray):
+        return input_data
     if isinstance(input_data, str):
         if ',' in input_data:
             input_data = input_data.split(',', 1)[1]
@@ -197,20 +201,31 @@ def detect_four_corners(bgr: np.ndarray) -> Tuple[np.ndarray, bool]:
     return default_pts, False
 
 
-def rectify_to_canonical(bgr: np.ndarray, corners: np.ndarray) -> np.ndarray:
+def rectify_to_canonical(
+    bgr: np.ndarray,
+    corners: np.ndarray,
+    template: Optional[SheetTemplate] = None,
+) -> np.ndarray:
     """Warp source image so that the 4 detected corners match the exact canonical target corners."""
-    dst = np.array([
-        list(TARGET_TL),
-        list(TARGET_TR),
-        list(TARGET_BR),
-        list(TARGET_BL),
-    ], dtype=np.float32)
+    if template is not None:
+        dst = np.array(template.target_anchors, dtype=np.float32)
+        target_w = template.canonical_width
+        target_h = template.canonical_height
+    else:
+        dst = np.array([
+            list(TARGET_TL),
+            list(TARGET_TR),
+            list(TARGET_BR),
+            list(TARGET_BL),
+        ], dtype=np.float32)
+        target_w = CANONICAL_WIDTH
+        target_h = CANONICAL_HEIGHT
 
     M = cv2.getPerspectiveTransform(corners, dst)
     warped = cv2.warpPerspective(
         bgr,
         M,
-        (CANONICAL_WIDTH, CANONICAL_HEIGHT),
+        (target_w, target_h),
         flags=cv2.INTER_LINEAR,
         borderMode=cv2.BORDER_REPLICATE
     )
@@ -279,13 +294,19 @@ def sample_bubble(warped_gray: np.ndarray, cx: float, cy: float, r: float) -> Tu
 # Data Reading: SBD & Mã Đề
 # -------------------------------------------------------------
 
-def read_sbd(warped_gray: np.ndarray) -> Tuple[str, List[int]]:
-    """Read 8-digit Student ID (Số báo danh). Returns (sbd_str, uncertain_col_indices)."""
-    grid = get_sbd_grid()
+def read_sbd(
+    warped_gray: np.ndarray,
+    grid: Optional[Dict[int, List[Tuple[int, float, float, float]]]] = None,
+) -> Tuple[str, List[int]]:
+    """Read Student ID (Số báo danh). Supports 6 or 8 digits. Returns (sbd_str, uncertain_col_indices)."""
+    if grid is None:
+        grid = get_sbd_grid()
+
     sbd_chars = []
     uncertain_cols = []
+    col_indices = sorted(grid.keys())
 
-    for col_idx in range(8):
+    for col_idx in col_indices:
         bubbles = grid[col_idx]
         scores = []
         for digit, x, y, r in bubbles:
@@ -294,7 +315,7 @@ def read_sbd(warped_gray: np.ndarray) -> Tuple[str, List[int]]:
 
         scores.sort(key=lambda s: s[1], reverse=True)
         top1 = scores[0]
-        top2 = scores[1]
+        top2 = scores[1] if len(scores) > 1 else (0, 0.0, 0.0)
 
         # Criteria for valid mark: score > 20 and distinct from top2
         if top1[1] > 22.0:
@@ -312,13 +333,19 @@ def read_sbd(warped_gray: np.ndarray) -> Tuple[str, List[int]]:
     return "".join(sbd_chars), uncertain_cols
 
 
-def read_exam_code(warped_gray: np.ndarray) -> Tuple[str, List[int]]:
-    """Read 4-digit Exam Code (Mã đề thi). Returns (code_str, uncertain_col_indices)."""
-    grid = get_mdt_grid()
+def read_exam_code(
+    warped_gray: np.ndarray,
+    grid: Optional[Dict[int, List[Tuple[int, float, float, float]]]] = None,
+) -> Tuple[str, List[int]]:
+    """Read Exam Code (Mã đề thi). Supports 3 or 4 digits. Returns (code_str, uncertain_col_indices)."""
+    if grid is None:
+        grid = get_mdt_grid()
+
     code_chars = []
     uncertain_cols = []
+    col_indices = sorted(grid.keys())
 
-    for col_idx in range(4):
+    for col_idx in col_indices:
         bubbles = grid[col_idx]
         scores = []
         for digit, x, y, r in bubbles:
@@ -327,7 +354,7 @@ def read_exam_code(warped_gray: np.ndarray) -> Tuple[str, List[int]]:
 
         scores.sort(key=lambda s: s[1], reverse=True)
         top1 = scores[0]
-        top2 = scores[1]
+        top2 = scores[1] if len(scores) > 1 else (0, 0.0, 0.0)
 
         if top1[1] > 22.0:
             if (top1[1] - top2[1]) < 10.0 and top2[1] > 20.0:
@@ -346,28 +373,38 @@ def read_exam_code(warped_gray: np.ndarray) -> Tuple[str, List[int]]:
 # Data Reading: Phần I (Trắc nghiệm nhiều lựa chọn A, B, C, D)
 # -------------------------------------------------------------
 
-def read_part1(warped_gray: np.ndarray, max_questions: int = 40) -> List[Dict[str, Any]]:
+def read_part1(
+    warped_gray: np.ndarray,
+    max_questions: int = 40,
+    grid: Optional[Dict[int, Dict[str, Tuple[float, float, float]]]] = None,
+) -> List[Dict[str, Any]]:
     """
     Read Part I answers for questions 1 to max_questions.
     Returns list of dicts:
     [{ 'question': 1, 'chosen': 'A', 'score': 45.2, 'is_uncertain': False, 'scores': {...} }, ...]
     """
-    grid = get_part1_grid()
-    results = []
+    if grid is None:
+        grid = get_part1_grid()
 
-    for q_num in range(1, max_questions + 1):
-        if q_num not in grid:
-            continue
+    results = []
+    available_q_nums = sorted([q for q in grid.keys() if q <= max_questions])
+
+    for q_num in available_q_nums:
         opt_bubbles = grid[q_num]
         scores = {}
         for opt in ['A', 'B', 'C', 'D']:
+            if opt not in opt_bubbles:
+                continue
             x, y, r = opt_bubbles[opt]
             score, fill = sample_bubble(warped_gray, x, y, r)
             scores[opt] = (score, fill)
 
+        if not scores:
+            continue
+
         sorted_opts = sorted(scores.items(), key=lambda item: item[1][0], reverse=True)
         top1_opt, (top1_score, top1_fill) = sorted_opts[0]
-        top2_opt, (top2_score, top2_fill) = sorted_opts[1]
+        top2_opt, (top2_score, top2_fill) = sorted_opts[1] if len(sorted_opts) > 1 else ('', (0.0, 0.0))
 
         chosen = None
         is_uncertain = False
@@ -396,22 +433,32 @@ def read_part1(warped_gray: np.ndarray, max_questions: int = 40) -> List[Dict[st
 # Data Reading: Phần II (Trắc nghiệm Đúng / Sai)
 # -------------------------------------------------------------
 
-def read_part2(warped_gray: np.ndarray, max_questions: int = 8) -> List[Dict[str, Any]]:
+def read_part2(
+    warped_gray: np.ndarray,
+    max_questions: int = 8,
+    grid: Optional[Dict[int, Dict[str, Dict[str, Tuple[float, float, float]]]]] = None,
+) -> List[Dict[str, Any]]:
     """
     Read Part II answers for questions 1 to max_questions.
     Each question has 4 sub-items: a, b, c, d with choices 'Đ' or 'S'.
     """
-    grid = get_part2_grid()
-    results = []
+    if grid is None:
+        grid = get_part2_grid()
 
-    for q_num in range(1, max_questions + 1):
-        if q_num not in grid:
-            continue
+    if not grid or max_questions <= 0:
+        return []
+
+    results = []
+    available_q_nums = sorted([q for q in grid.keys() if q <= max_questions])
+
+    for q_num in available_q_nums:
         sub_grid = grid[q_num]
         sub_answers = {}
         is_q_uncertain = False
 
         for sub_key in ['a', 'b', 'c', 'd']:
+            if sub_key not in sub_grid:
+                continue
             d_x, d_y, d_r = sub_grid[sub_key]['Đ']
             s_x, s_y, s_r = sub_grid[sub_key]['S']
 
@@ -453,17 +500,25 @@ def read_part2(warped_gray: np.ndarray, max_questions: int = 8) -> List[Dict[str
 # Data Reading: Phần III (Trắc nghiệm Trả lời ngắn)
 # -------------------------------------------------------------
 
-def read_part3(warped_gray: np.ndarray, max_questions: int = 6) -> List[Dict[str, Any]]:
+def read_part3(
+    warped_gray: np.ndarray,
+    max_questions: int = 6,
+    grid: Optional[Dict[int, Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
     """
     Read Part III answers for questions 1 to max_questions.
     Constructs numerical string answer: e.g. "-12,5", "446", "0,25".
     """
-    grid = get_part3_grid()
-    results = []
+    if grid is None:
+        grid = get_part3_grid()
 
-    for q_num in range(1, max_questions + 1):
-        if q_num not in grid:
-            continue
+    if not grid or max_questions <= 0:
+        return []
+
+    results = []
+    available_q_nums = sorted([q for q in grid.keys() if q <= max_questions])
+
+    for q_num in available_q_nums:
         q_data = grid[q_num]
 
         # 1. Minus sign
@@ -471,15 +526,15 @@ def read_part3(warped_gray: np.ndarray, max_questions: int = 6) -> List[Dict[str
         score_minus, _ = sample_bubble(warped_gray, mx, my, mr)
         has_minus = score_minus > 24.0
 
-        # 2. Comma 1 (after col 0) & Comma 2 (after col 1)
+        # 2. Comma 1 & Comma 2
         c1x, c1y, c1r = q_data['comma_1']
         c2x, c2y, c2r = q_data['comma_2']
-        score_c1, _ = sample_bubble(warped_gray, c1x, c1y, c1r)
-        score_c2, _ = sample_bubble(warped_gray, c2x, c2y, c2r)
+        score_c1, _ = sample_bubble(warped_gray, c1x, c1y, c1r) if c1r > 0 else (0.0, 0.0)
+        score_c2, _ = sample_bubble(warped_gray, c2x, c2y, c2r) if c2r > 0 else (0.0, 0.0)
         has_comma_1 = score_c1 > 24.0
         has_comma_2 = score_c2 > 24.0
 
-        # 3. Four digit columns
+        # 3. Digit columns
         col_digits = []
         is_uncertain = False
 
@@ -491,7 +546,7 @@ def read_part3(warped_gray: np.ndarray, max_questions: int = 6) -> List[Dict[str
 
             digit_scores.sort(key=lambda item: item[1], reverse=True)
             top1 = digit_scores[0]
-            top2 = digit_scores[1]
+            top2 = digit_scores[1] if len(digit_scores) > 1 else (0, 0.0)
 
             if top1[1] > 22.0:
                 if (top1[1] - top2[1]) < 10.0 and top2[1] > 20.0:
@@ -502,32 +557,22 @@ def read_part3(warped_gray: np.ndarray, max_questions: int = 6) -> List[Dict[str
             else:
                 col_digits.append(None)
 
-        # Assemble string representation
-        # Find active digits
-        # Format can be: "-X,YZ" or "XYZ" or "X,Y"
-        # Determine placement of comma:
-        raw_str = ""
-        if has_minus:
-            raw_str += "-"
-
-        # Filter out trailing/leading None while preserving relative structure
-        # If there's a comma, format accordingly
         digit_chars = [d if d is not None else '' for d in col_digits]
         assembled = "".join(digit_chars).strip()
 
-        # If comma is checked, insert it
         if has_comma_1 and len(digit_chars) >= 2:
-            # Comma between col 0 and 1
             part_a = digit_chars[0] or '0'
             part_b = "".join(digit_chars[1:]).rstrip()
             if part_b:
                 assembled = f"{part_a},{part_b}"
         elif has_comma_2 and len(digit_chars) >= 3:
-            # Comma between col 1 and 2
             part_a = "".join(digit_chars[:2]).lstrip() or '0'
             part_b = "".join(digit_chars[2:]).rstrip()
             if part_b:
                 assembled = f"{part_a},{part_b}"
+
+        if has_minus and assembled:
+            assembled = "-" + assembled
 
         results.append({
             'question': q_num,
@@ -550,22 +595,33 @@ def grade_answers(
     part2_parsed: List[Dict[str, Any]],
     part3_parsed: List[Dict[str, Any]],
     answer_key: Dict[str, Any],
+    max_p1: int = 40,
+    max_p2: int = 8,
+    max_p3: int = 6,
 ) -> Dict[str, Any]:
     """
     Grade student answers against answer_key according to official MoET 2025 specifications.
     Formula:
-    - Part I:  0.25 pt / question (Math: 12 questions = 3.0 pts)
-    - Part II: Progressive scoring (Math: 4 questions = 4.0 pts):
-        1 correct sub-item: 0.1 pt
-        2 correct sub-items: 0.25 pt
-        3 correct sub-items: 0.5 pt
-        4 correct sub-items: 1.0 pt
-    - Part III: 0.5 pt / question (Math: 6 questions = 3.0 pts)
+    - Pure MCQ sheet (Part II & Part III = 0): 10.0 / max_p1 points per question (e.g. 0.5 for 20q, 0.25 for 40q)
+    - 3-Part sheets:
+        - Part I:  0.25 pt / question (Math: 12 questions = 3.0 pts)
+        - Part II: Progressive scoring (Math: 4 questions = 4.0 pts):
+            1 correct sub-item: 0.1 pt
+            2 correct sub-items: 0.25 pt
+            3 correct sub-items: 0.5 pt
+            4 correct sub-items: 1.0 pt
+        - Part III: 0.5 pt / question (Math: 6 questions = 3.0 pts)
     Total: 10.0 pts.
     """
     key_p1 = answer_key.get('part1', {})
     key_p2 = answer_key.get('part2', {})
     key_p3 = answer_key.get('part3', {})
+
+    # Part I points calculation
+    if max_p2 == 0 and max_p3 == 0:
+        points_per_p1 = round(10.0 / max(1, max_p1), 4)
+    else:
+        points_per_p1 = 0.25
 
     # Part I Grading
     p1_graded = []
@@ -578,14 +634,14 @@ def grade_answers(
             continue
 
         is_correct = (item['chosen'] == correct_ans)
-        points = 0.25 if is_correct else 0.0
+        points = points_per_p1 if is_correct else 0.0
         p1_score += points
         p1_graded.append({
             'question': q_num,
             'chosen': item['chosen'],
             'correct': correct_ans,
             'is_correct': is_correct,
-            'points': points,
+            'points': round(points, 2),
             'uncertain': item['is_uncertain'],
         })
 
@@ -597,7 +653,13 @@ def grade_answers(
     for item in part2_parsed:
         q_num = item['question']
         str_q = str(q_num)
-        correct_q = key_p2.get(str_q) or key_p2.get(q_num)
+        # Support both relative (1..8) and absolute (41..48)
+        correct_q = (
+            key_p2.get(str_q)
+            or key_p2.get(q_num)
+            or key_p2.get(str(q_num + 40))
+            or key_p2.get(q_num + 40)
+        )
         if not correct_q:
             continue
 
@@ -642,13 +704,18 @@ def grade_answers(
         if not val:
             return None
         v = str(val).strip().replace('.', ',')
-        # Standardize decimal separator
         return v
 
     for item in part3_parsed:
         q_num = item['question']
         str_q = str(q_num)
-        correct_ans = key_p3.get(str_q) or key_p3.get(q_num)
+        # Support both relative (1..6) and absolute (49..54)
+        correct_ans = (
+            key_p3.get(str_q)
+            or key_p3.get(q_num)
+            or key_p3.get(str(q_num + 48))
+            or key_p3.get(q_num + 48)
+        )
         if not correct_ans:
             continue
 
@@ -667,7 +734,7 @@ def grade_answers(
             'uncertain': item['is_uncertain'],
         })
 
-    total_score = round(p1_score + p2_score + p3_score, 2)
+    total_score = min(10.0, round(p1_score + p2_score + p3_score, 2))
 
     return {
         'total_score': total_score,
@@ -689,15 +756,19 @@ def generate_annotated_image(
     sbd: str,
     exam_code: str,
     grade_res: Dict[str, Any],
+    template: Optional[SheetTemplate] = None,
 ) -> str:
     """
     Draw green circles (correct), red circles (wrong), and yellow circles (uncertain)
     over the canonical answer sheet, plus header info bar. Returns base64 JPEG data URL.
     """
+    if template is None:
+        template = get_sheet_template("2025_standard")
+
     annotated = warped_bgr.copy()
-    p1_grid = get_part1_grid()
-    p2_grid = get_part2_grid()
-    p3_grid = get_part3_grid()
+    p1_grid = template.get_part1_grid()
+    p2_grid = template.get_part2_grid()
+    p3_grid = template.get_part3_grid()
 
     # Draw Part I results
     for item in grade_res.get('part1_results', []):
@@ -733,6 +804,8 @@ def generate_annotated_image(
         if q_num not in p2_grid:
             continue
         for sub_key, sub_item in item['sub'].items():
+            if sub_key not in p2_grid[q_num]:
+                continue
             chosen = sub_item['chosen']
             correct = sub_item['correct']
 
@@ -748,17 +821,36 @@ def generate_annotated_image(
                     cv2.circle(annotated, (int(cx), int(cy)), int(cr * 1.25), (0, 200, 0), 3)
 
     # Header Banner on Image
-    score_text = f"DIEM: {grade_res['total_score']}/10.0  |  SBD: {sbd}  |  MA DE: {exam_code}"
-    sub_text = f"P.I: {grade_res['part1_score']}  |  P.II: {grade_res['part2_score']}  |  P.III: {grade_res['part3_score']}"
+    w_can = template.canonical_width
+    h_can = template.canonical_height
 
-    cv2.rectangle(annotated, (150, 40), (1400, 200), (255, 255, 255), -1)
-    cv2.rectangle(annotated, (150, 40), (1400, 200), (0, 160, 0), 4)
-    cv2.putText(annotated, score_text, (180, 110), cv2.FONT_HERSHEY_DUPLEX, 1.2, (0, 120, 0), 3)
-    cv2.putText(annotated, sub_text, (180, 170), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (50, 50, 50), 2)
+    score_text = f"DIEM: {grade_res['total_score']}/10.0  |  SBD: {sbd}  |  MD: {exam_code}"
+    if len(p2_grid) > 0 or len(p3_grid) > 0:
+        sub_text = f"P.I: {grade_res['part1_score']}  |  P.II: {grade_res['part2_score']}  |  P.III: {grade_res['part3_score']}"
+    else:
+        num_correct = sum(1 for x in grade_res.get('part1_results', []) if x.get('is_correct'))
+        tot_q = len(grade_res.get('part1_results', []))
+        sub_text = f"Trac nghiem: {grade_res['part1_score']} diem ({num_correct}/{tot_q} cau)"
 
-    # Downscale for lightweight mobile transmission (width ~1164)
-    scale = 1164.0 / CANONICAL_WIDTH
-    preview = cv2.resize(annotated, (1164, int(CANONICAL_HEIGHT * scale)), interpolation=cv2.INTER_AREA)
+    # Banner dimensions
+    b_x1 = int(w_can * 0.05)
+    b_x2 = int(w_can * 0.95)
+    b_y1 = int(h_can * 0.012)
+    b_y2 = int(h_can * 0.058)
+
+    cv2.rectangle(annotated, (b_x1, b_y1), (b_x2, b_y2), (255, 255, 255), -1)
+    cv2.rectangle(annotated, (b_x1, b_y1), (b_x2, b_y2), (0, 160, 0), 3)
+
+    font_scale = 1.0 if w_can >= 2000 else 0.7
+    t_y1 = b_y1 + int((b_y2 - b_y1) * 0.45)
+    t_y2 = b_y1 + int((b_y2 - b_y1) * 0.85)
+
+    cv2.putText(annotated, score_text, (b_x1 + 20, t_y1), cv2.FONT_HERSHEY_DUPLEX, font_scale, (0, 120, 0), 2)
+    cv2.putText(annotated, sub_text, (b_x1 + 20, t_y2), cv2.FONT_HERSHEY_SIMPLEX, font_scale * 0.8, (50, 50, 50), 2)
+
+    # Downscale for lightweight mobile transmission (target width ~1164)
+    scale = min(1.0, 1164.0 / w_can)
+    preview = cv2.resize(annotated, (int(w_can * scale), int(h_can * scale)), interpolation=cv2.INTER_AREA)
 
     _, buffer = cv2.imencode('.jpg', preview, [cv2.IMWRITE_JPEG_QUALITY, 85])
     b64 = base64.b64encode(buffer).decode('utf-8')
@@ -775,28 +867,43 @@ def process_omr_sheet(
     max_p1: int = 40,
     max_p2: int = 8,
     max_p3: int = 6,
+    sheet_type: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Full pipeline to process a photographed answer sheet:
-    1. Load image & handle orientation
-    2. Detect 4 fiducials & perspective warp to canonical 2328x3381
+    1. Resolve template geometry (MoET 2025, TNDO-A20, TNDO-A40, TNDO-3P-2026)
+    2. Detect 4 fiducials & perspective warp to template canonical coordinates
     3. Read SBD, Mã Đề, Part I, Part II, Part III
     4. Calculate official score if answer_key provided
     5. Generate visual annotated preview overlay
     """
+    template = get_sheet_template(sheet_type)
+
+    # If pure MCQ sheet (A20, A40), force p2 and p3 to 0
+    if len(template.get_part2_grid()) == 0:
+        max_p2 = 0
+    if len(template.get_part3_grid()) == 0:
+        max_p3 = 0
+
     bgr = load_image_from_bytes_or_b64(image_input)
     corners, confident = detect_four_corners(bgr)
-    warped = rectify_to_canonical(bgr, corners)
+    warped = rectify_to_canonical(bgr, corners, template)
     warped_gray = cv2.cvtColor(warped, cv2.COLOR_BGR2GRAY)
 
-    # Read IDs
-    sbd, sbd_uncertain = read_sbd(warped_gray)
-    exam_code, code_uncertain = read_exam_code(warped_gray)
+    # Read IDs using template grids
+    sbd_grid = template.get_sbd_grid()
+    mdt_grid = template.get_mdt_grid()
+    sbd, sbd_uncertain = read_sbd(warped_gray, sbd_grid)
+    exam_code, code_uncertain = read_exam_code(warped_gray, mdt_grid)
 
-    # Read Test Sections
-    p1_parsed = read_part1(warped_gray, max_p1)
-    p2_parsed = read_part2(warped_gray, max_p2)
-    p3_parsed = read_part3(warped_gray, max_p3)
+    # Read Test Sections using template grids
+    p1_grid = template.get_part1_grid()
+    p2_grid = template.get_part2_grid()
+    p3_grid = template.get_part3_grid()
+
+    p1_parsed = read_part1(warped_gray, max_p1, p1_grid)
+    p2_parsed = read_part2(warped_gray, max_p2, p2_grid) if p2_grid and max_p2 > 0 else []
+    p3_parsed = read_part3(warped_gray, max_p3, p3_grid) if p3_grid and max_p3 > 0 else []
 
     uncertain_questions = []
     for item in p1_parsed:
@@ -817,20 +924,29 @@ def process_omr_sheet(
         elif 'part1' in answer_key or 'part2' in answer_key:
             selected_key = answer_key
         else:
-            # Try to match with any key or first key
             first_key = next(iter(answer_key.values())) if answer_key else {}
             if isinstance(first_key, dict) and ('part1' in first_key or 'part2' in first_key):
                 selected_key = first_key
             else:
                 selected_key = answer_key
 
-    grade_res = grade_answers(p1_parsed, p2_parsed, p3_parsed, selected_key)
-    annotated_url = generate_annotated_image(warped, sbd, exam_code, grade_res)
+    grade_res = grade_answers(
+        p1_parsed,
+        p2_parsed,
+        p3_parsed,
+        selected_key,
+        max_p1=max_p1,
+        max_p2=max_p2,
+        max_p3=max_p3,
+    )
+    annotated_url = generate_annotated_image(warped, sbd, exam_code, grade_res, template)
 
     return {
         'success': True,
         'sbd': sbd,
         'exam_code': exam_code,
+        'sheet_type': template.id,
+        'sheet_name': template.name,
         'confident_alignment': confident,
         'uncertain_questions': uncertain_questions,
         'grading': grade_res,
