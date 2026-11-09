@@ -24,11 +24,11 @@ export function releaseResult(result) {
 
 export const api = {
   // ===== TikZ Endpoints =====
-  renderTikz: async (source, dpi = 180) => {
+  renderTikz: async (source, dpi = 180, options = {}) => {
     const res = await fetch(`${API_BASE}/tikz/render`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ source, dpi }),
+      body: JSON.stringify({ source, dpi, ...options }),
     });
     await checkResponse(res, 'Không thể biên dịch mã TikZ.');
     const data = await res.json();

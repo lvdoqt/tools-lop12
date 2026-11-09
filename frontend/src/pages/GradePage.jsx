@@ -19,10 +19,15 @@ import {
   CloudUpload,
   CloudDownload,
   Edit2,
-  Check,
-  ChevronDown
+  Check
 } from 'lucide-react';
 import { api } from '../api';
+import {
+  detectCornersOnCanvas,
+  playBeepSound,
+  playSuccessChime,
+  playWarningSound
+} from '../lib/omrDetector';
 import './GradePage.css';
 
 const STORAGE_EXAMS_KEY = 'grade_exams_list_v2';
@@ -215,6 +220,11 @@ export default function GradePage() {
   const streamRef = useRef(null);
   const cameraInputRef = useRef(null);
   const galleryInputRef = useRef(null);
+  const hiddenCanvasRef = useRef(null);
+  const stableFramesRef = useRef(0);
+  const cooldownRef = useRef(false);
+  const isProcessingRef = useRef(false);
+  const handleCaptureFrameRef = useRef(null);
 
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraEnabled, setCameraEnabled] = useState(true);
@@ -225,6 +235,13 @@ export default function GradePage() {
   const [cameraError, setCameraError] = useState(null);
   const [currentResult, setCurrentResult] = useState(null);
   const [selectedSubForView, setSelectedSubForView] = useState(null);
+
+  // Real-time Auto-Scan State
+  const [autoScanEnabled, setAutoScanEnabled] = useState(true);
+  const [cornerStatus, setCornerStatus] = useState({ tl: false, tr: false, bl: false, br: false, count: 0 });
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
+  const [isShutterFlashing, setIsShutterFlashing] = useState(false);
+  const [lastQuickResult, setLastQuickResult] = useState(null);
 
   const answerKeys = currentExam.answer_keys || {};
   const examCodes = useMemo(() => Object.keys(answerKeys), [answerKeys]);
@@ -375,18 +392,23 @@ export default function GradePage() {
   const handlePrimaryCapture = () => {
     if (isProcessing) return;
     if (cameraActive) {
-      handleCaptureFrame();
+      handleCaptureFrame(autoScanEnabled);
     } else {
       cameraInputRef.current?.click();
     }
   };
 
   // Capture current frame from video and send to OMR engine
-  const handleCaptureFrame = async () => {
-    if (!videoRef.current || isProcessing) return;
+  const handleCaptureFrame = async (isAuto = false) => {
+    if (!videoRef.current || isProcessingRef.current) return;
     try {
       setIsProcessing(true);
+      isProcessingRef.current = true;
       setErrorMessage(null);
+
+      // Trigger camera shutter flash animation
+      setIsShutterFlashing(true);
+      setTimeout(() => setIsShutterFlashing(false), 220);
 
       const video = videoRef.current;
       const canvas = document.createElement('canvas');
@@ -405,14 +427,110 @@ export default function GradePage() {
         currentExam.sheet_type || '2025_math'
       );
 
-      setCurrentResult(res);
-      stopCamera();
+      if (isAuto) {
+        // Auto mode: seamlessly save submission, play chime, keep camera alive!
+        const newSub = {
+          id: Date.now().toString(),
+          timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+          sbd: res.sbd || 'Chưa rõ',
+          exam_code: res.exam_code || 'Chưa rõ',
+          grading: res.grading,
+          uncertain_questions: res.uncertain_questions || [],
+          annotated_image: res.annotated_image,
+        };
+
+        updateCurrentExam(e => ({
+          ...e,
+          submissions: [newSub, ...(e.submissions || [])],
+        }));
+
+        playSuccessChime();
+        setLastQuickResult(newSub);
+
+        // Cooldown 1.5 seconds before allowing next auto-capture
+        cooldownRef.current = true;
+        setCooldownSeconds(1.5);
+        let remain = 1.5;
+        const cTimer = setInterval(() => {
+          remain -= 0.3;
+          if (remain <= 0.05) {
+            clearInterval(cTimer);
+            cooldownRef.current = false;
+            setCooldownSeconds(0);
+          } else {
+            setCooldownSeconds(+remain.toFixed(1));
+          }
+        }, 300);
+      } else {
+        setCurrentResult(res);
+        stopCamera();
+      }
     } catch (err) {
+      playWarningSound();
       setErrorMessage(err.message || 'Lỗi xử lý phiếu chấm. Hãy đảm bảo 4 góc đen nằm trọn trong khung hình.');
+      if (isAuto) {
+        cooldownRef.current = true;
+        setTimeout(() => {
+          cooldownRef.current = false;
+        }, 1200);
+      }
     } finally {
       setIsProcessing(false);
+      isProcessingRef.current = false;
     }
   };
+
+  useEffect(() => {
+    handleCaptureFrameRef.current = handleCaptureFrame;
+  });
+
+  // Real-time Corner Detection Loop
+  useEffect(() => {
+    if (!cameraActive || !autoScanEnabled || activeTab !== 'scan' || currentResult) {
+      setCornerStatus({ tl: false, tr: false, bl: false, br: false, count: 0 });
+      stableFramesRef.current = 0;
+      return;
+    }
+
+    const intervalId = setInterval(() => {
+      if (
+        isProcessingRef.current ||
+        cooldownRef.current ||
+        !videoRef.current ||
+        !hiddenCanvasRef.current ||
+        videoRef.current.readyState < 2
+      ) {
+        return;
+      }
+
+      const res = detectCornersOnCanvas(videoRef.current, hiddenCanvasRef.current);
+      setCornerStatus({
+        tl: res.tl,
+        tr: res.tr,
+        bl: res.bl,
+        br: res.br,
+        count: res.count,
+      });
+
+      if (res.allFound) {
+        stableFramesRef.current += 1;
+        // Require 2 consecutive frames (~280ms) of all 4 corners detected to ensure stability
+        if (stableFramesRef.current >= 2) {
+          stableFramesRef.current = 0;
+          playBeepSound();
+          if (handleCaptureFrameRef.current) {
+            handleCaptureFrameRef.current(true);
+          }
+        }
+      } else {
+        stableFramesRef.current = 0;
+      }
+    }, 140);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [cameraActive, autoScanEnabled, activeTab, currentResult]);
 
   // Upload photo file from disk / camera app
   const handleFileUpload = async (event) => {
@@ -872,16 +990,55 @@ export default function GradePage() {
                     </div>
                   )}
 
-                  {/* 4 Corner Reticle Alignment Guide — LUÔN HIỂN THỊ ĐỂ ĐỊNH HƯỚNG */}
-                  <div className="viewport-reticle">
-                    <div className="reticle-corner reticle-tl" />
-                    <div className="reticle-corner reticle-tr" />
-                    <div className="reticle-corner reticle-bl" />
-                    <div className="reticle-corner reticle-br" />
-                    <div className="reticle-guide-text">
-                      {cameraActive
-                        ? `Căn 4 góc đen phiếu [${getSheetTypeName(currentExam.sheet_type)}] vào 4 góc khung rồi bấm Chụp`
-                        : `Khung quét phiếu: ${getSheetTypeName(currentExam.sheet_type)}`}
+                  {/* Shutter Flash Animation */}
+                  {isShutterFlashing && <div className="camera-shutter-flash" />}
+
+                  {/* Hidden Canvas for real-time client-side corner detection */}
+                  <canvas ref={hiddenCanvasRef} style={{ display: 'none' }} />
+
+                  {/* 4 Corner Reticle Alignment Guide — HIỂN THỊ ĐÈN TRẠNG THÁI TỪNG GÓC */}
+                  <div className={`viewport-reticle ${cornerStatus.count === 4 ? 'reticle-all-matched' : ''}`}>
+                    <div className={`reticle-corner reticle-tl ${cornerStatus.tl ? 'detected' : ''}`}>
+                      {cornerStatus.tl && <span className="corner-dot-pulse" />}
+                    </div>
+                    <div className={`reticle-corner reticle-tr ${cornerStatus.tr ? 'detected' : ''}`}>
+                      {cornerStatus.tr && <span className="corner-dot-pulse" />}
+                    </div>
+                    <div className={`reticle-corner reticle-bl ${cornerStatus.bl ? 'detected' : ''}`}>
+                      {cornerStatus.bl && <span className="corner-dot-pulse" />}
+                    </div>
+                    <div className={`reticle-corner reticle-br ${cornerStatus.br ? 'detected' : ''}`}>
+                      {cornerStatus.br && <span className="corner-dot-pulse" />}
+                    </div>
+
+                    <div className={`reticle-guide-text ${cornerStatus.count === 4 ? 'guide-matched' : ''}`}>
+                      {cooldownSeconds > 0 ? (
+                        <span className="guide-cooldown">
+                          ⏳ Đã chấm xong! Sẵn sàng phiếu kế tiếp ({cooldownSeconds}s)…
+                        </span>
+                      ) : isProcessing ? (
+                        <span className="guide-processing" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                          <RefreshCw size={14} className="spin" /> Đang chấm điểm…
+                        </span>
+                      ) : autoScanEnabled ? (
+                        cornerStatus.count === 4 ? (
+                          <span className="guide-success">
+                            🟢 ĐÃ NHẬN ĐỦ 4 GÓC — ĐANG TỰ ĐỘNG CHỤP!
+                          </span>
+                        ) : cornerStatus.count > 0 ? (
+                          <span className="guide-partial">
+                            🔍 Đã nhận {cornerStatus.count}/4 góc (Căn đều 4 góc khung)
+                          </span>
+                        ) : (
+                          <span>
+                            ⚡ Tự động chấm: Đưa 4 góc đen của phiếu vào khung
+                          </span>
+                        )
+                      ) : (
+                        <span>
+                          Khung quét phiếu: {getSheetTypeName(currentExam.sheet_type)}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -935,7 +1092,7 @@ export default function GradePage() {
                         startCamera();
                       }}
                       disabled={isStartingCamera}
-                      title="Thử bật Camera trực tiếp (WebRTC)"
+                      title="Bật Camera trực tiếp (WebRTC)"
                     >
                       {isStartingCamera ? (
                         <RefreshCw size={20} className="spin" />
@@ -945,22 +1102,40 @@ export default function GradePage() {
                     </button>
                   )}
 
+                  {/* Nút bật tắt Tự động chụp */}
+                  <button
+                    type="button"
+                    className={`btn-auto-toggle ${autoScanEnabled ? 'active' : ''}`}
+                    onClick={() => setAutoScanEnabled(prev => !prev)}
+                    title={autoScanEnabled ? 'Chế độ Tự động quét đang BẬT: Khi nhận đủ 4 góc sẽ tự chụp & chấm ngay' : 'Bật chế độ Tự động chụp khi nhận đủ 4 góc'}
+                  >
+                    <Zap size={16} />
+                    <span>{autoScanEnabled ? 'Auto Scan: BẬT' : 'Auto Scan: TẮT'}</span>
+                  </button>
+
                   <button
                     className="btn-capture-big"
                     onClick={handlePrimaryCapture}
                     disabled={isProcessing}
-                    title={cameraActive ? 'Chụp ảnh từ video và chấm bài' : 'Mở máy ảnh chụp và chấm bài ngay'}
+                    title={cameraActive ? 'Chụp ngay hoặc để camera tự động chụp khi thấy 4 góc' : 'Mở máy ảnh chụp và chấm bài ngay'}
                   >
                     {isProcessing ? (
                       <>
                         <RefreshCw size={20} className="spin" />
-                        Đang chấm bài…
+                        Đang chấm…
                       </>
                     ) : cameraActive ? (
-                      <>
-                        <Camera size={20} />
-                        Chụp & Chấm
-                      </>
+                      autoScanEnabled ? (
+                        <>
+                          <Zap size={20} />
+                          {cornerStatus.count === 4 ? '🟢 Đang chụp…' : 'Chụp ngay'}
+                        </>
+                      ) : (
+                        <>
+                          <Camera size={20} />
+                          Chụp & Chấm
+                        </>
+                      )
                     ) : (
                       <>
                         <Camera size={22} />
@@ -978,6 +1153,49 @@ export default function GradePage() {
                     <Upload size={20} />
                   </button>
                 </div>
+
+                {/* Quick Result Floating Bar (Khi tự động chấm bài thành công) */}
+                {lastQuickResult && (
+                  <div className="quick-result-floating-bar">
+                    <div className="quick-result-left">
+                      <div className="quick-result-score-badge">
+                        <CheckCircle size={18} color="#4ade80" />
+                        <span className="quick-result-score-val">{lastQuickResult.grading?.total_score}đ</span>
+                      </div>
+                      <div className="quick-result-info">
+                        <div className="quick-result-title">
+                          <strong>SBD:</strong> {lastQuickResult.sbd} • <strong>Mã đề:</strong> {lastQuickResult.exam_code}
+                        </div>
+                        <div className="quick-result-stats">
+                          {currentExam.config.maxP2 === 0 && currentExam.config.maxP3 === 0 ? (
+                            <span>Đúng {lastQuickResult.grading?.part1_results?.filter(r => r.is_correct).length || 0}/{currentExam.config.maxP1} câu</span>
+                          ) : (
+                            <span>P1: {lastQuickResult.grading?.part1_score}đ | P2: {lastQuickResult.grading?.part2_score}đ | P3: {lastQuickResult.grading?.part3_score}đ</span>
+                          )}
+                          <span className="quick-result-count"> • Đã lưu bài thứ <strong>{submissions.length}</strong></span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="quick-result-actions">
+                      <button
+                        type="button"
+                        className="btn-quick-view"
+                        onClick={() => setSelectedSubForView(lastQuickResult)}
+                        title="Xem ảnh chi tiết phiếu đã chấm"
+                      >
+                        <Eye size={15} /> Xem ảnh
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-quick-close"
+                        onClick={() => setLastQuickResult(null)}
+                        title="Đóng thông báo"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               /* Scanned Result Card */
@@ -1082,13 +1300,72 @@ export default function GradePage() {
 
             {/* Side Info Box */}
             <div className="info-sidebar">
+              {/* Thống kê nhanh tiến độ chấm trực tiếp */}
+              <div className="config-box" style={{ background: '#f8fafc', borderColor: '#cbd5e1' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <h3 style={{ margin: 0, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <CheckCircle size={16} color="#16a34a" />
+                    Đã chấm: <strong>{submissions.length} bài</strong>
+                  </h3>
+                  <button
+                    className="btn-secondary"
+                    style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}
+                    onClick={() => setActiveTab('gradebook')}
+                  >
+                    Xem bảng điểm
+                  </button>
+                </div>
+
+                {submissions.length === 0 ? (
+                  <p style={{ margin: 0, fontSize: '0.825rem', color: '#64748b' }}>
+                    Chưa có bài nào. Đưa phiếu vào camera để hệ thống tự động quét và chấm điểm.
+                  </p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.5rem' }}>
+                    {submissions.slice(0, 4).map((sub, idx) => (
+                      <div
+                        key={sub.id || idx}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          background: '#ffffff',
+                          padding: '0.35rem 0.6rem',
+                          borderRadius: '0.4rem',
+                          border: '1px solid #e2e8f0',
+                          fontSize: '0.825rem',
+                        }}
+                      >
+                        <div>
+                          <strong>SBD {sub.sbd}</strong> • Mã {sub.exam_code}
+                          <span style={{ color: '#94a3b8', marginLeft: '0.4rem', fontSize: '0.75rem' }}>{sub.timestamp}</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span style={{ fontWeight: 800, color: '#16a34a', fontSize: '0.95rem' }}>
+                            {sub.grading?.total_score}đ
+                          </span>
+                          <button
+                            className="btn-icon-secondary"
+                            style={{ padding: '0.2rem', minWidth: '24px', minHeight: '24px' }}
+                            onClick={() => setSelectedSubForView(sub)}
+                            title="Xem chi tiết phiếu này"
+                          >
+                            <Eye size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <div className="config-box">
-                <h3><Zap size={18} color="#0284c7" /> Hướng dẫn quét bài nhanh</h3>
-                <ol style={{ fontSize: '0.875rem', paddingLeft: '1.25rem', lineHeight: '1.6', color: '#475569' }}>
-                  <li>Đặt phiếu trên mặt bàn phẳng, đủ ánh sáng, tránh sấp bóng.</li>
-                  <li>Hướng camera thẳng đứng, nhìn thấy trọn vẹn <strong>4 ô vuông đen ở 4 góc</strong>.</li>
-                  <li>Bấm <strong>"Chụp & Chấm"</strong> $\rightarrow$ Kết quả và ảnh khoanh đỏ/xanh hiển thị sau 0.8 giây.</li>
-                  <li>Bấm <strong>"Lưu & Chấm tiếp bài sau"</strong> để chấm liên tục cho cả lớp mà không phải bấm nút quay lại.</li>
+                <h3><Zap size={18} color="#0284c7" /> Hướng dẫn tự động chấm</h3>
+                <ol style={{ fontSize: '0.875rem', paddingLeft: '1.25rem', lineHeight: '1.6', color: '#475569', margin: 0 }}>
+                  <li>Giữ nguyên chế độ <strong>Auto Scan: BẬT</strong>.</li>
+                  <li>Hướng camera vào phiếu, để <strong>4 góc đen</strong> nằm trong 4 góc khung ngắm.</li>
+                  <li>Khi cả 4 góc chuyển sang <strong>XANH LÁ (🟢)</strong>, máy sẽ tự phát tiếng <strong>Bíp</strong>, tự chụp và chấm điểm.</li>
+                  <li>Bài chấm được tự lưu ngay $\rightarrow$ Đặt phiếu kế tiếp vào để chấm liên tục cả xấp bài!</li>
                 </ol>
               </div>
 

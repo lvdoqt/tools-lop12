@@ -1,11 +1,11 @@
 /**
- * Client-side Kroki TeX Engine integration for TikZ diagrams.
- * Supports tkz-tab, tkz-euclide, pgfplots, amsmath, and Vietnamese text.
+ * Client-side Kroki TeX Engine integration for TikZ diagrams and A4 Exam Documents.
+ * Supports tkz-tab, tkz-euclide, pgfplots, amsmath, ex_test, and Vietnamese text.
  */
 
 export const KROKI_TIKZ_ENDPOINT = 'https://kroki.io/tikz';
 
-const VIETNAMESE_DECLS = `
+export const VIETNAMESE_DECLS = `
 % Tone helpers for T1 encoding
 \\providecommand{\\vnh}[1]{\\v{#1}}
 \\providecommand{\\vno}{o\\kern-0.12em\\raisebox{0.55ex}{\\fontsize{4}{4}\\selectfont '}\\kern0.08em}
@@ -174,15 +174,13 @@ const VIETNAMESE_DECLS = `
 \\DeclareUnicodeCharacter{1EF4}{\\d{Y}}
 `;
 
-const EX_ENVIRONMENT_DECLS = `
+export const EX_ENVIRONMENT_DECLS = `
 % ex_test and exam package compatibility definitions
 \\makeatletter
 \\@ifundefined{c@excount}{\\newcounter{excount}}{}
 \\providecommand{\\exname}{Câu}
 \\providecommand{\\Opensolutionfile}[2]{}
 \\providecommand{\\Closesolutionfile}[1]{}
-\\providecommand{\\phanII}[1][]{\\par\\vspace{1em}\\noindent\\textbf{\\large PHẦN II. #1}\\par\\vspace{0.5em}}
-\\providecommand{\\phanIII}[1][]{\\par\\vspace{1em}\\noindent\\textbf{\\large PHẦN III. #1}\\par\\vspace{0.5em}}
 \\providecommand{\\diem}[2][]{\\if\\relax\\detokenize{#2}\\relax\\else\\space\\textit{(#2 điểm)}\\fi}
 \\providecommand{\\R}{\\mathbb{R}}
 \\providecommand{\\True}{\\textbf{*}}
@@ -191,12 +189,12 @@ const EX_ENVIRONMENT_DECLS = `
 
 \\@ifundefined{ex}{%
   \\newenvironment{ex}[1][]{%
-    \\par\\vspace{0.8em}\\noindent
+    \\par\\vspace{0.7em}\\noindent
     \\refstepcounter{excount}%
     \\textbf{\\exname~\\theexcount.}%
     \\if\\relax\\detokenize{#1}\\relax\\else\\space\\textbf{(#1)}\\fi\\space
   }{%
-    \\par\\vspace{0.8em}%
+    \\par\\vspace{0.7em}%
   }%
 }{}
 
@@ -266,6 +264,22 @@ const EX_ENVIRONMENT_DECLS = `
 }
 \\providecommand{\\choiceTFt}[5][4]{\\choiceTF[#1]{#2}{#3}{#4}{#5}}
 
+\\providecommand{\\phanII}[1][]{%
+  \\par\\vspace{1.2em}\\noindent
+  \\textbf{\\large PHẦN II. Câu trắc nghiệm đúng sai.}%
+  \\if\\relax\\detokenize{#1}\\relax\\else\\space\\textbf{#1}\\fi\\par\\vspace{0.2em}
+  \\noindent\\textit{Thí sinh trả lời từ câu 1 đến câu 4. Trong mỗi ý a), b), c), d) ở mỗi câu, thí sinh chọn đúng hoặc sai.}\\par\\vspace{0.6em}%
+  \\setcounter{excount}{0}%
+}
+
+\\providecommand{\\phanIII}[1][]{%
+  \\par\\vspace{1.2em}\\noindent
+  \\textbf{\\large PHẦN III. Câu trắc nghiệm trả lời ngắn.}%
+  \\if\\relax\\detokenize{#1}\\relax\\else\\space\\textbf{#1}\\fi\\par\\vspace{0.2em}
+  \\noindent\\textit{Thí sinh trả lời từ câu 1 đến câu 6.}\\par\\vspace{0.6em}%
+  \\setcounter{excount}{0}%
+}
+
 \\@ifundefined{immini}{%
   \\newcommand{\\immini}{\\@ifstar\\@imministar\\@immininostar}
   \\newcommand{\\@immininostar}[3][]{%
@@ -291,13 +305,254 @@ const EX_ENVIRONMENT_DECLS = `
 `;
 
 /**
- * Prepares LaTeX TikZ document suitable for Kroki TeX Engine.
+ * Checks if source is an exam with multiple questions.
  */
-export function buildKrokiDocument(source) {
+export function isExamDocument(source) {
+  if (!source) return false;
+  return /\\begin\s*\{ex\}|\\choiceTF|\\choice\b|\\phanI|\\phanII|\\phanIII|\\shortans\b|\\loigiai\b/i.test(source);
+}
+
+/**
+ * Match nested braces group { ... }
+ */
+function matchGroup(text, start, open = '{', close = '}') {
+  let pos = start;
+  while (pos < text.length && /\s/.test(text[pos])) pos++;
+  if (pos >= text.length || text[pos] !== open) return null;
+  let depth = 1;
+  let idx = pos + 1;
+  while (idx < text.length) {
+    if (text[idx] === '\\') {
+      idx += 2;
+      continue;
+    }
+    if (text[idx] === open) depth++;
+    else if (text[idx] === close) {
+      depth--;
+      if (depth === 0) {
+        return { content: text.slice(pos + 1, idx), end: idx + 1 };
+      }
+    }
+    idx++;
+  }
+  return null;
+}
+
+function skipOptional(text, start) {
+  let pos = start;
+  while (pos < text.length && /\s/.test(text[pos])) pos++;
+  if (pos < text.length && text[pos] === '[') {
+    const res = matchGroup(text, pos, '[', ']');
+    if (res) return res.end;
+  }
+  return pos;
+}
+
+function getBraceArgs(text, startIdx, count = 4) {
+  let pos = startIdx;
+  const args = [];
+  for (let i = 0; i < count; i++) {
+    const res = matchGroup(text, pos);
+    if (!res) break;
+    args.push(res.content);
+    pos = res.end;
+  }
+  return args;
+}
+
+/**
+ * Parses answers from an exam source (Part 1: 12 MCQ, Part 2: 4 TF, Part 3: 6 Short answers).
+ */
+export function extractExamAnswers(source) {
+  const p1 = [];
+  const p2 = [];
+  const p3 = [];
+
+  const phan2Match = /\\phanII\b/.exec(source);
+  const phan3Match = /\\phanIII\b/.exec(source);
+
+  const p1End = phan2Match ? phan2Match.index : source.length;
+  const p2Start = phan2Match ? phan2Match.index + phan2Match[0].length : source.length;
+  const p2End = phan3Match ? phan3Match.index : source.length;
+  const p3Start = phan3Match ? phan3Match.index + phan3Match[0].length : source.length;
+
+  const p1Text = source.slice(0, p1End);
+  const p2Text = source.slice(p2Start, p2End);
+  const p3Text = source.slice(p3Start);
+
+  function parseExBlocks(text) {
+    const blocks = [];
+    const exRegex = /\\begin\{ex\}/g;
+    let match;
+    const starts = [];
+    while ((match = exRegex.exec(text)) !== null) {
+      starts.push(match.index);
+    }
+    for (let i = 0; i < starts.length; i++) {
+      const nextStart = i + 1 < starts.length ? starts[i + 1] : text.length;
+      blocks.push(text.slice(starts[i], nextStart));
+    }
+    return blocks;
+  }
+
+  // Part 1: Multiple Choice
+  parseExBlocks(p1Text).forEach((block, idx) => {
+    const choiceMatch = /\\choice\b/.exec(block);
+    let ans = null;
+    if (choiceMatch) {
+      const startPos = skipOptional(block, choiceMatch.index + choiceMatch[0].length);
+      const opts = getBraceArgs(block, startPos, 4);
+      opts.forEach((opt, oIdx) => {
+        if (/\\True\b/.test(opt)) ans = String.fromCharCode(65 + oIdx);
+      });
+    }
+    p1.push({ q: idx + 1, ans: ans || '-' });
+  });
+
+  // Part 2: True/False
+  parseExBlocks(p2Text).forEach((block, idx) => {
+    const tfMatch = /\\choiceTF(?:t)?\b/.exec(block);
+    const answers = ['S', 'S', 'S', 'S'];
+    if (tfMatch) {
+      const startPos = skipOptional(block, tfMatch.index + tfMatch[0].length);
+      const opts = getBraceArgs(block, startPos, 4);
+      opts.forEach((opt, oIdx) => {
+        if (/\\True\b/.test(opt)) answers[oIdx] = 'Đ';
+      });
+    }
+    p2.push({ q: idx + 1, ans: answers });
+  });
+
+  // Part 3: Short Answers
+  parseExBlocks(p3Text).forEach((block, idx) => {
+    const saMatch = /\\shortans(?:\[[^\]]*\])?\s*\{/.exec(block);
+    let val = '-';
+    if (saMatch) {
+      const res = matchGroup(block, saMatch.index + saMatch[0].length - 1);
+      if (res) {
+        val = res.content.trim().replace(/^\$+/g, '').replace(/\$+$/g, '').replace(/\{,\}/g, ',');
+      }
+    }
+    p3.push({ q: idx + 1, ans: val });
+  });
+
+  return { p1, p2, p3 };
+}
+
+/**
+ * Builds LaTeX code for the Answer Key Table.
+ */
+export function buildAnswerKeyTableLatex(answers) {
+  if (!answers || (!answers.p1.length && !answers.p2.length && !answers.p3.length)) {
+    return '';
+  }
+
+  let tableTex = `
+\\newpage
+\\par\\vspace{1em}
+\\begin{center}
+{\\Large\\textbf{BẢNG ĐÁP ÁN THAM KHẢO}}
+\\end{center}
+\\vspace{0.5em}
+`;
+
+  if (answers.p1.length) {
+    tableTex += `
+\\noindent\\textbf{\\large PHẦN I. Câu trắc nghiệm nhiều phương án lựa chọn}
+\\begin{center}
+\\begin{tabular}{|${answers.p1.map(() => 'c|').join('')}}
+\\hline
+${answers.p1.map(item => `\\textbf{${item.q}}`).join(' & ')} \\\\
+\\hline
+${answers.p1.map(item => item.ans).join(' & ')} \\\\
+\\hline
+\\end{tabular}
+\\end{center}
+\\vspace{0.8em}
+`;
+  }
+
+  if (answers.p2.length) {
+    tableTex += `
+\\noindent\\textbf{\\large PHẦN II. Câu trắc nghiệm đúng sai}
+\\begin{center}
+\\begin{tabular}{|c|c|c|c|c|}
+\\hline
+\\textbf{Câu} & \\textbf{Ý a)} & \\textbf{Ý b)} & \\textbf{Ý c)} & \\textbf{Ý d)} \\\\
+\\hline
+${answers.p2.map(item => `\\textbf{${item.q}} & ${item.ans[0]} & ${item.ans[1]} & ${item.ans[2]} & ${item.ans[3]}`).join(' \\\\\n\\hline\n')} \\\\
+\\hline
+\\end{tabular}
+\\end{center}
+\\vspace{0.8em}
+`;
+  }
+
+  if (answers.p3.length) {
+    tableTex += `
+\\noindent\\textbf{\\large PHẦN III. Câu trắc nghiệm trả lời ngắn}
+\\begin{center}
+\\begin{tabular}{|c|${answers.p3.map(() => 'c|').join('')}}
+\\hline
+\\textbf{Câu} & ${answers.p3.map(item => `\\textbf{${item.q}}`).join(' & ')} \\\\
+\\hline
+\\textbf{Đáp số} & ${answers.p3.map(item => `$${item.ans}$`).join(' & ')} \\\\
+\\hline
+\\end{tabular}
+\\end{center}
+`;
+  }
+
+  return tableTex;
+}
+
+/**
+ * Builds LaTeX Exam Header box.
+ */
+export function buildExamHeader(config = {}) {
+  const org = config.examOrg || 'BỘ GIÁO DỤC VÀ ĐÀO TẠO';
+  const title = config.examTitle || 'KỲ THI TỐT NGHIỆP TRUNG HỌC PHỔ THÔNG NĂM 2026';
+  const subject = config.examSubject || 'Bài thi: TOÁN';
+  const time = config.examTime || '90 phút, không kể thời gian phát đề';
+  const examMode = config.examMode || 'student';
+  const isSolution = examMode === 'solution';
+
+  return `
+\\begin{center}
+\\begin{tabular*}{\\linewidth}{@{\\extracolsep{\\fill}}lr}
+\\textbf{${org}} & \\textbf{${title}}\\\\
+\\textbf{ĐỀ THI CHÍNH THỨC} & \\textbf{${subject}}\\\\
+\\textit{(Đề thi có \\pageref{LastPage} trang${isSolution ? ' - Kèm lời giải' : ''})} & \\textit{Thời gian làm bài: ${time}}
+\\end{tabular*}
+\\end{center}
+\\vspace{-0.6em}
+\\noindent\\rule{\\linewidth}{0.6pt}
+\\vspace{0.3em}
+\\noindent\\textbf{Họ và tên thí sinh:} \\dotfill \\hspace{1cm} \\textbf{Số báo danh:} \\dotfill
+\\vspace{0.8em}
+
+\\noindent\\textbf{\\large PHẦN I. Câu trắc nghiệm nhiều phương án lựa chọn.}\\par\\vspace{0.2em}
+\\noindent\\textit{Thí sinh trả lời từ câu 1 đến câu 12. Mỗi câu hỏi thí sinh chỉ chọn một phương án.}\\par\\vspace{0.5em}
+`;
+}
+
+/**
+ * Prepares LaTeX document suitable for Kroki TeX Engine.
+ * Supports standalone diagrams and A4 Exam documents (2026 graduation format).
+ */
+export function buildKrokiDocument(source, options = {}) {
   let doc = (source || '').trim();
-  // Strip code fences
+  // Strip markdown code fences
   doc = doc.replace(/^```[\w+-]*\s*$/gm, '').trim();
 
+  const mode = options.mode || (isExamDocument(doc) ? 'exam' : 'tikz');
+  const examMode = options.examMode || 'student'; // 'student' | 'solution' | 'student_with_answers'
+  const examCode = options.examCode || '101';
+  const examOrg = options.examOrg || 'BỘ GIÁO DỤC VÀ ĐÀO TẠO';
+  const examTitle = options.examTitle || 'KỲ THI TỐT NGHIỆP TRUNG HỌC PHỔ THÔNG NĂM 2026';
+  const examSubject = options.examSubject || 'Bài thi: TOÁN';
+
+  // If user provided a complete document with \documentclass
   if (doc.includes('\\documentclass')) {
     // Replace T5 fontenc with T1 because Kroki lacks vntex t5enc.def
     doc = doc.replace(/\\usepackage\s*\[\s*T5\s*\]\s*\{\s*fontenc\s*\}/g, '\\usepackage[T1]{fontenc}');
@@ -306,7 +561,6 @@ export function buildKrokiDocument(source) {
     // Cap pgfplots compat
     doc = doc.replace(/(\\pgfplotsset\s*\{\s*compat\s*=\s*)([2-9]\.\d+|1\.(?:19|\d{3,}))(\s*\})/g, '$11.18$3');
 
-    // If user provided a full document, inject missing packages if needed
     const preamble = doc.split('\\begin{document}')[0];
     const preambleClean = preamble.replace(/%.*$/gm, '');
     let injections = '';
@@ -327,12 +581,113 @@ export function buildKrokiDocument(source) {
       injections += EX_ENVIRONMENT_DECLS + '\n';
     }
 
+    // Always inject standalone handlebox preventer so TikZ pictures don't shrink document pages
+    injections += `\\makeatletter\n\\AtBeginDocument{\\def\\sa@handlebox{}}\n\\makeatother\n`;
+
     if (injections) {
       doc = doc.replace('\\begin{document}', `${injections}\\begin{document}`);
     }
     return doc;
   }
 
+  // A4 Exam Document Mode
+  if (mode === 'exam') {
+    // Clean redundant solution file commands if any
+    let cleanedSource = doc
+      .replace(/\\Opensolutionfile\{[^}]*\}(?:\[[^\]]*\])?/g, '')
+      .replace(/\\Closesolutionfile\{[^}]*\}/g, '')
+      .trim();
+
+    // Mode-specific declarations
+    let modeDecls = '';
+    if (examMode === 'student' || examMode === 'student_with_answers') {
+      modeDecls = `
+\\renewcommand{\\loigiai}[1]{}
+\\renewcommand{\\True}{}
+\\renewcommand{\\shortans}[2][]{\\par\\vspace{0.3em}\\noindent\\textbf{Đáp số:} \\dotfill\\par}
+`;
+    } else {
+      modeDecls = `
+\\renewcommand{\\True}{\\textbf{*}}
+\\providecommand{\\shortans}[2][]{\\par\\vspace{0.3em}\\noindent\\textbf{Đáp số:} \\textbf{#2}\\par}
+`;
+    }
+
+    // Ending text
+    const examEnding = `
+\\par\\vspace{1.5em}
+\\centerline{\\textbf{------------------------ HẾT ------------------------}}
+\\par\\vspace{0.4em}
+\\centerline{\\textit{Thí sinh không được sử dụng tài liệu. Cán bộ coi thi không giải thích gì thêm.}}
+`;
+
+    // Answer table if requested
+    let answerTableTex = '';
+    if (examMode === 'solution' || examMode === 'student_with_answers' || options.appendAnswerTable) {
+      try {
+        const answers = extractExamAnswers(cleanedSource);
+        answerTableTex = buildAnswerKeyTableLatex(answers);
+      } catch {
+        /* ignore table generation errors */
+      }
+    }
+
+    const examHeaderBox = buildExamHeader({
+      examOrg,
+      examTitle,
+      examSubject,
+      examTime: options.examTime || '90 phút, không kể thời gian phát đề',
+      examMode,
+    });
+
+    return `\\documentclass[a4paper,10pt]{article}
+\\usepackage[utf8]{inputenc}
+\\usepackage[T1]{fontenc}
+\\usepackage[a4paper,top=1.8cm,bottom=1.8cm,left=1.8cm,right=1.5cm]{geometry}
+\\usepackage{amsmath,amssymb}
+\\usepackage{tikz}
+\\usepackage{tkz-tab}
+\\usepackage{tkz-euclide}
+\\usepackage{pgfplots}
+\\pgfplotsset{compat=1.18}
+\\usetikzlibrary{arrows.meta,automata,backgrounds,calc,decorations.pathmorphing,intersections,matrix,patterns,positioning,shapes.geometric}
+\\usepackage{fancyhdr}
+\\usepackage{lastpage}
+\\pagestyle{fancy}
+\\fancyhf{}
+\\lhead{\\small\\textbf{${examOrg}}}
+\\rhead{\\small\\textbf{${examTitle} - ${examSubject}}}
+\\lfoot{\\small\\textit{Trang \\thepage/\\pageref{LastPage}}}
+\\rfoot{\\small\\textbf{Mã đề thi ${examCode}}}
+\\renewcommand{\\headrulewidth}{0.4pt}
+\\renewcommand{\\footrulewidth}{0.4pt}
+
+\\makeatletter
+\\AtBeginDocument{\\def\\sa@handlebox{}}
+\\makeatother
+
+${VIETNAMESE_DECLS}
+${EX_ENVIRONMENT_DECLS}
+${modeDecls}
+
+\\begin{document}
+\\makeatletter
+\\def\\sa@handlebox{}
+\\makeatother
+
+${examHeaderBox}
+
+${cleanedSource}
+
+${examEnding}
+
+${answerTableTex}
+
+\\end{document}
+`;
+  }
+
+  // Standalone TikZ Diagram Mode
   return `\\documentclass[tikz,varwidth=18cm,border=10pt]{standalone}
 \\usepackage[T1]{fontenc}
 \\usepackage[utf8]{inputenc}
@@ -353,10 +708,9 @@ ${doc}
 /**
  * Parse human-readable error from Kroki TeX output.
  */
-function parseKrokiError(raw) {
-  if (!raw) return 'Biên dịch TikZ thất bại.';
+export function parseKrokiError(raw) {
+  if (!raw) return 'Biên dịch TeX / TikZ thất bại.';
   const clean = raw.replace(/^Error \d+:\s*/i, '').trim();
-  // Match standard LaTeX errors like ! Package ... Error: ... or ! LaTeX Error: ...
   const match = clean.match(/!(?:[^\n]+\n(?:[^\n]+\n)?)/);
   if (match) {
     const lines = match[0].split('\n').map(l => l.trim()).filter(Boolean);
@@ -366,11 +720,25 @@ function parseKrokiError(raw) {
 }
 
 /**
- * Render TikZ code to SVG via Kroki TeX Engine.
+ * Render TikZ code or Exam to PDF/SVG via Kroki TeX Engine.
  */
-export async function renderTikzWithKroki(source, { signal } = {}) {
-  const document = buildKrokiDocument(source);
+export async function renderTikzWithKroki(source, options = {}) {
+  const { signal } = options;
+  const isExam = options.mode === 'exam' || (options.mode !== 'tikz' && isExamDocument(source));
+  const document = buildKrokiDocument(source, { ...options, mode: isExam ? 'exam' : 'tikz' });
 
+  // For exams, we directly compile to PDF (skip /svg to avoid single-page cutoff and timeout)
+  if (isExam) {
+    const pdfBlob = await fetchKrokiPdf(document, { signal });
+    return {
+      document,
+      isExam: true,
+      pdfBlob,
+      svg: null,
+    };
+  }
+
+  // For standalone TikZ diagrams, render SVG
   const res = await fetch(`${KROKI_TIKZ_ENDPOINT}/svg`, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain; charset=utf-8' },
@@ -388,7 +756,7 @@ export async function renderTikzWithKroki(source, { signal } = {}) {
     throw new Error('Đầu ra từ Kroki TeX Engine không phải định dạng SVG hợp lệ.');
   }
 
-  return { svg, document };
+  return { svg, document, isExam: false };
 }
 
 /**
@@ -401,7 +769,10 @@ export async function fetchKrokiPdf(document, { signal } = {}) {
     body: document,
     signal,
   });
-  if (!res.ok) throw new Error('Không thể tải PDF từ Kroki TeX Engine.');
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    throw new Error(parseKrokiError(errText) || 'Không thể tải PDF từ Kroki TeX Engine.');
+  }
   return await res.blob();
 }
 
@@ -409,6 +780,7 @@ export async function fetchKrokiPdf(document, { signal } = {}) {
  * Render SVG to PNG blob at requested DPI via browser HTML Canvas.
  */
 export async function svgToPngBlob(svgString, dpi = 180) {
+  if (!svgString) return null;
   return new Promise((resolve, reject) => {
     try {
       const scale = dpi / 72;
@@ -417,7 +789,6 @@ export async function svgToPngBlob(svgString, dpi = 180) {
       const svgEl = doc.querySelector('svg');
       if (!svgEl) return reject(new Error('Mã SVG không hợp lệ.'));
 
-      // Read dimensions
       let width = parseFloat(svgEl.getAttribute('width'));
       let height = parseFloat(svgEl.getAttribute('height'));
 

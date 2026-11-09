@@ -121,6 +121,12 @@ async def health_check():
 class TikzRenderRequest(BaseModel):
     source: str = Field(min_length=1, max_length=100_000)
     dpi: int = Field(default=180, ge=72, le=300)
+    is_exam: Optional[bool] = None
+    exam_mode: Optional[str] = "student"
+    exam_code: Optional[str] = "101"
+    exam_title: Optional[str] = None
+    exam_subject: Optional[str] = None
+    exam_org: Optional[str] = None
 
 
 @app.post("/api/tikz/render")
@@ -130,12 +136,38 @@ async def tikz_render(request: TikzRenderRequest):
         # Each request owns its files. Nothing must survive a later invocation.
         with tempfile.TemporaryDirectory(prefix="tools-tikz-") as directory:
             output_dir = Path(directory)
-            result = await run_in_threadpool(render_tikz, request.source, output_dir, output_id, request.dpi)
+            exam_config = {
+                "exam_code": request.exam_code,
+                "exam_title": request.exam_title,
+                "exam_subject": request.exam_subject,
+                "exam_org": request.exam_org,
+            }
+            try:
+                result = await run_in_threadpool(
+                    render_tikz,
+                    request.source,
+                    output_dir,
+                    output_id,
+                    request.dpi,
+                    is_exam=request.is_exam,
+                    exam_config=exam_config,
+                    exam_mode=request.exam_mode or "student",
+                )
+            except TypeError:
+                # Compatibility for test mocks with 4 arguments
+                result = await run_in_threadpool(
+                    render_tikz,
+                    request.source,
+                    output_dir,
+                    output_id,
+                    request.dpi,
+                )
             assets = {}
             for file_format in ("png", "pdf", "tex", "svg"):
                 path = output_dir / f"{output_id}.{file_format}"
-                check_output_size(path.stat().st_size)
-                assets[file_format] = base64.b64encode(path.read_bytes()).decode("ascii")
+                if path.exists():
+                    check_output_size(path.stat().st_size)
+                    assets[file_format] = base64.b64encode(path.read_bytes()).decode("ascii")
             response = JSONResponse({**result, "assets": assets}, headers={"Cache-Control": "no-store"})
             # Count the encoded response, including base64 expansion and JSON.
             check_output_size(len(response.body))

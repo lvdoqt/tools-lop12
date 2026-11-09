@@ -47,9 +47,9 @@ const ALL_TOOLS = [
   {
     id: 'tex-pdf', path: '/tex-to-pdf', category: 'convert',
     icon: '🧮', iconClass: 'green',
-    title: 'TeX → PDF & Ảnh',
-    desc: 'Biên dịch file LaTeX (.tex), TikZ sang PDF và hình ảnh (SVG, PNG). Hỗ trợ công thức toán, bảng biến thiên và hình học.',
-    tags: [{ text: 'Mới', cls: 'new' }, { text: 'LaTeX' }, { text: 'PDF' }, { text: 'Ảnh' }],
+    title: 'TeX → PDF Chuẩn A4',
+    desc: 'Biên dịch đề thi .tex sang PDF chuẩn A4 (cấu trúc Đề thi TN THPT 2026 môn Toán, in làm bài hoặc kèm lời giải) và đồ họa TikZ sắc nét.',
+    tags: [{ text: 'Mới', cls: 'new' }, { text: 'Đề thi 2026' }, { text: 'PDF A4' }, { text: 'LaTeX' }],
     active: true,
   },
   {
