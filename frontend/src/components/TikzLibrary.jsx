@@ -8,7 +8,7 @@ function downloadTikz(source, title = 'tikz-diagram') {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export default function TikzLibrary({ compiled, onOpen, addToast }) {
+export default function TikzLibrary({ compiled, onOpen, addToast, refreshSignal, externalSavedId, onSaved }) {
   const [connected, setConnected] = useState(true);
   const [items, setItems] = useState([]);
   const [query, setQuery] = useState('');
@@ -18,10 +18,11 @@ export default function TikzLibrary({ compiled, onOpen, addToast }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [title, setTitle] = useState('');
-  const [savedId, setSavedId] = useState(null);
+  const [internalSavedId, setInternalSavedId] = useState(null);
   const [detail, setDetail] = useState(null);
-  const attempted = useRef(null);
   const saveLock = useRef(false);
+
+  const savedId = externalSavedId || internalSavedId;
 
   const request = useCallback(async (path = '', method = 'GET', body) => {
     const response = await fetch(`${API_BASE}/tikz/library${path}`, {
@@ -42,7 +43,7 @@ export default function TikzLibrary({ compiled, onOpen, addToast }) {
       if (!cancelled) setError(e.message);
     });
     return () => { cancelled = true; };
-  }, [request]);
+  }, [request, refreshSignal]);
 
   async function load(append = false) {
     setBusy(true); setError('');
@@ -67,19 +68,12 @@ export default function TikzLibrary({ compiled, onOpen, addToast }) {
       setQuery(''); setActiveQuery('');
       const rows = await request('?offset=0');
       setItems(rows); setMore(rows.length === 25);
-      setSavedId(snapshot.id);
-      addToast(`Đã lưu “${row.title}” lên thư viện`, 'success');
+      setInternalSavedId(snapshot.id);
+      if (onSaved) onSaved(snapshot.id);
+      addToast(`Đã upload lên Cloudinary & lưu “${row.title}” vào Supabase`, 'success');
     } catch (e) { setError(`Chưa hoàn tất lưu: ${e.message} Bấm “Lưu vào thư viện” để thử lại.`); }
     finally { saveLock.current = false; setSaving(false); }
-  }, [compiled, connected, title, request, addToast]);
-
-  // Each successful compilation is saved once when the library is unlocked.
-  useEffect(() => {
-    if (compiled?.svg && connected && !saving && attempted.current !== compiled.id) {
-      attempted.current = compiled.id;
-      save();
-    }
-  }, [compiled, connected, saving, save]);
+  }, [compiled, connected, title, request, addToast, onSaved]);
 
   async function action(fn) {
     setBusy(true); setError('');
@@ -99,7 +93,7 @@ export default function TikzLibrary({ compiled, onOpen, addToast }) {
 
   return <section className="glass-panel tikz-library">
     <h2>Thư viện hình TikZ</h2>
-    <p>Ảnh lưu trên Cloudinary, mã TikZ lưu trên Supabase. Mở thư viện để tự lưu mỗi lần vẽ thành công.</p>
+    <p>Ảnh lưu trên Cloudinary, mã TikZ lưu trên Supabase. Nhấn “Lưu vào thư viện” hoặc “Upload lên Cloud” để lưu hình ảnh.</p>
     <>
       <div className="tikz-library-toolbar">
         <label>Tên hình cho lần lưu tiếp theo<input value={title} maxLength={200} onChange={e => setTitle(e.target.value)} placeholder="Ví dụ: Hình chóp S.ABCD" /></label>

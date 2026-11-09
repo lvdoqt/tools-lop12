@@ -177,7 +177,7 @@ class ApiTests(unittest.TestCase):
         self.assertTrue(all(not directory.exists() for directory in directories))
 
     def test_tikz_validation_and_failure_cleanup(self):
-        self.assertEqual(self.client.post("/api/tikz/render", json={"source": "x" * 20001}).status_code, 422)
+        self.assertEqual(self.client.post("/api/tikz/render", json={"source": "x" * 100001}).status_code, 422)
         directories = []
 
         def renderer(source, directory, output_id, dpi):

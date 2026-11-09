@@ -12,78 +12,292 @@ import requests
 
 KROKI_URL = os.getenv("KROKI_URL", "https://kroki.io").rstrip("/")
 LATEX_ONLINE_URL = "https://latexonline.cc/compile"
-MAX_SOURCE_LENGTH = 20_000
+MAX_SOURCE_LENGTH = 100_000
 PGFPLOTS_COMPAT_VERSION = (1, 18)
 
 VIETNAMESE_UNICODE_DECLS = r"""
+% Tone helpers for T1 encoding
+\providecommand{\vnh}[1]{\v{#1}}
+\providecommand{\vno}{o\kern-0.12em\raisebox{0.55ex}{\fontsize{4}{4}\selectfont '}\kern0.08em}
+\providecommand{\vnO}{O\kern-0.14em\raisebox{0.85ex}{\fontsize{4}{4}\selectfont '}\kern0.08em}
+\providecommand{\vnu}{u\kern-0.12em\raisebox{0.55ex}{\fontsize{4}{4}\selectfont '}\kern0.08em}
+\providecommand{\vnU}{U\kern-0.14em\raisebox{0.85ex}{\fontsize{4}{4}\selectfont '}\kern0.08em}
+
+% D stroke
 \DeclareUnicodeCharacter{0110}{\DJ}
 \DeclareUnicodeCharacter{0111}{\dj}
+
+% A
 \DeclareUnicodeCharacter{00E1}{\'{a}}
+\DeclareUnicodeCharacter{00C1}{\'{A}}
 \DeclareUnicodeCharacter{00E0}{\`{a}}
-\DeclareUnicodeCharacter{1EA3}{\h{a}}
+\DeclareUnicodeCharacter{00C0}{\`{A}}
+\DeclareUnicodeCharacter{1EA3}{\vnh{a}}
+\DeclareUnicodeCharacter{1EA2}{\vnh{A}}
 \DeclareUnicodeCharacter{00E3}{\~{a}}
+\DeclareUnicodeCharacter{00C3}{\~{A}}
 \DeclareUnicodeCharacter{1EA1}{\d{a}}
+\DeclareUnicodeCharacter{1EA0}{\d{A}}
+
+% A breve (Ă)
 \DeclareUnicodeCharacter{0103}{\u{a}}
-\DeclareUnicodeCharacter{1EAF}{\'{a}}
-\DeclareUnicodeCharacter{1EB1}{\`{a}}
-\DeclareUnicodeCharacter{1EB3}{\u{a}}
-\DeclareUnicodeCharacter{1EB5}{\~{a}}
-\DeclareUnicodeCharacter{1EB7}{\d{a}}
+\DeclareUnicodeCharacter{0102}{\u{A}}
+\DeclareUnicodeCharacter{1EAF}{\'{\u{a}}}
+\DeclareUnicodeCharacter{1EAE}{\'{\u{A}}}
+\DeclareUnicodeCharacter{1EB1}{\`{\u{a}}}
+\DeclareUnicodeCharacter{1EB0}{\`{\u{A}}}
+\DeclareUnicodeCharacter{1EB3}{\vnh{\u{a}}}
+\DeclareUnicodeCharacter{1EB2}{\vnh{\u{A}}}
+\DeclareUnicodeCharacter{1EB5}{\~{\u{a}}}
+\DeclareUnicodeCharacter{1EB4}{\~{\u{A}}}
+\DeclareUnicodeCharacter{1EB7}{\d{\u{a}}}
+\DeclareUnicodeCharacter{1EB6}{\d{\u{A}}}
+
+% A circumflex (Â)
 \DeclareUnicodeCharacter{00E2}{\^{a}}
-\DeclareUnicodeCharacter{1EA5}{\'{a}}
-\DeclareUnicodeCharacter{1EA7}{\`{a}}
-\DeclareUnicodeCharacter{1EA9}{\^{a}}
-\DeclareUnicodeCharacter{1EAB}{\~{a}}
-\DeclareUnicodeCharacter{1EAD}{\d{a}}
+\DeclareUnicodeCharacter{00C2}{\^{A}}
+\DeclareUnicodeCharacter{1EA5}{\'{\^{a}}}
+\DeclareUnicodeCharacter{1EA4}{\'{\^{A}}}
+\DeclareUnicodeCharacter{1EA7}{\`{\^{a}}}
+\DeclareUnicodeCharacter{1EA6}{\`{\^{A}}}
+\DeclareUnicodeCharacter{1EA9}{\vnh{\^{a}}}
+\DeclareUnicodeCharacter{1EA8}{\vnh{\^{A}}}
+\DeclareUnicodeCharacter{1EAB}{\~{\^{a}}}
+\DeclareUnicodeCharacter{1EAA}{\~{\^{A}}}
+\DeclareUnicodeCharacter{1EAD}{\d{\^{a}}}
+\DeclareUnicodeCharacter{1EAC}{\d{\^{A}}}
+
+% E
 \DeclareUnicodeCharacter{00E9}{\'{e}}
+\DeclareUnicodeCharacter{00C9}{\'{E}}
 \DeclareUnicodeCharacter{00E8}{\`{e}}
-\DeclareUnicodeCharacter{1EBB}{\h{e}}
+\DeclareUnicodeCharacter{00C8}{\`{E}}
+\DeclareUnicodeCharacter{1EBB}{\vnh{e}}
+\DeclareUnicodeCharacter{1EBA}{\vnh{E}}
 \DeclareUnicodeCharacter{1EBD}{\~{e}}
+\DeclareUnicodeCharacter{1EBC}{\~{E}}
 \DeclareUnicodeCharacter{1EB9}{\d{e}}
+\DeclareUnicodeCharacter{1EB8}{\d{E}}
+
+% E circumflex (Ê)
 \DeclareUnicodeCharacter{00EA}{\^{e}}
-\DeclareUnicodeCharacter{1EBF}{\'{e}}
-\DeclareUnicodeCharacter{1EC1}{\`{e}}
-\DeclareUnicodeCharacter{1EC3}{\^{e}}
-\DeclareUnicodeCharacter{1EC5}{\~{e}}
-\DeclareUnicodeCharacter{1EC7}{\d{e}}
+\DeclareUnicodeCharacter{00CA}{\^{E}}
+\DeclareUnicodeCharacter{1EBF}{\'{\^{e}}}
+\DeclareUnicodeCharacter{1EBE}{\'{\^{E}}}
+\DeclareUnicodeCharacter{1EC1}{\`{\^{e}}}
+\DeclareUnicodeCharacter{1EC0}{\`{\^{E}}}
+\DeclareUnicodeCharacter{1EC3}{\vnh{\^{e}}}
+\DeclareUnicodeCharacter{1EC2}{\vnh{\^{E}}}
+\DeclareUnicodeCharacter{1EC5}{\~{\^{e}}}
+\DeclareUnicodeCharacter{1EC4}{\~{\^{E}}}
+\DeclareUnicodeCharacter{1EC7}{\d{\^{e}}}
+\DeclareUnicodeCharacter{1EC6}{\d{\^{E}}}
+
+% I
 \DeclareUnicodeCharacter{00ED}{\'{i}}
+\DeclareUnicodeCharacter{00CD}{\'{I}}
 \DeclareUnicodeCharacter{00EC}{\`{i}}
-\DeclareUnicodeCharacter{1EC9}{\h{i}}
+\DeclareUnicodeCharacter{00CC}{\`{I}}
+\DeclareUnicodeCharacter{1EC9}{\vnh{i}}
+\DeclareUnicodeCharacter{1EC8}{\vnh{I}}
 \DeclareUnicodeCharacter{0129}{\~{i}}
+\DeclareUnicodeCharacter{0128}{\~{I}}
 \DeclareUnicodeCharacter{1ECB}{\d{i}}
+\DeclareUnicodeCharacter{1ECA}{\d{I}}
+
+% O
 \DeclareUnicodeCharacter{00F3}{\'{o}}
+\DeclareUnicodeCharacter{00D3}{\'{O}}
 \DeclareUnicodeCharacter{00F2}{\`{o}}
-\DeclareUnicodeCharacter{1ECF}{\h{o}}
+\DeclareUnicodeCharacter{00D2}{\`{O}}
+\DeclareUnicodeCharacter{1ECF}{\vnh{o}}
+\DeclareUnicodeCharacter{1ECE}{\vnh{O}}
 \DeclareUnicodeCharacter{00F5}{\~{o}}
+\DeclareUnicodeCharacter{00D5}{\~{O}}
 \DeclareUnicodeCharacter{1ECD}{\d{o}}
+\DeclareUnicodeCharacter{1ECC}{\d{O}}
+
+% O circumflex (Ô)
 \DeclareUnicodeCharacter{00F4}{\^{o}}
-\DeclareUnicodeCharacter{1ED1}{\'{o}}
-\DeclareUnicodeCharacter{1ED3}{\`{o}}
-\DeclareUnicodeCharacter{1ED5}{\^{o}}
-\DeclareUnicodeCharacter{1ED7}{\~{o}}
-\DeclareUnicodeCharacter{1ED9}{\d{o}}
-\DeclareUnicodeCharacter{01A1}{\^{o}}
-\DeclareUnicodeCharacter{1EDB}{\'{o}}
-\DeclareUnicodeCharacter{1EDD}{\`{o}}
-\DeclareUnicodeCharacter{1EDF}{\^{o}}
-\DeclareUnicodeCharacter{1EE1}{\~{o}}
-\DeclareUnicodeCharacter{1EE3}{\d{o}}
+\DeclareUnicodeCharacter{00D4}{\^{O}}
+\DeclareUnicodeCharacter{1ED1}{\'{\^{o}}}
+\DeclareUnicodeCharacter{1ED0}{\'{\^{O}}}
+\DeclareUnicodeCharacter{1ED3}{\`{\^{o}}}
+\DeclareUnicodeCharacter{1ED2}{\`{\^{O}}}
+\DeclareUnicodeCharacter{1ED5}{\vnh{\^{o}}}
+\DeclareUnicodeCharacter{1ED4}{\vnh{\^{O}}}
+\DeclareUnicodeCharacter{1ED7}{\~{\^{o}}}
+\DeclareUnicodeCharacter{1ED6}{\~{\^{O}}}
+\DeclareUnicodeCharacter{1ED9}{\d{\^{o}}}
+\DeclareUnicodeCharacter{1ED8}{\d{\^{O}}}
+
+% O horn (Ơ)
+\DeclareUnicodeCharacter{01A1}{\vno}
+\DeclareUnicodeCharacter{01A0}{\vnO}
+\DeclareUnicodeCharacter{1EDB}{\'{\vno}}
+\DeclareUnicodeCharacter{1EDA}{\'{\vnO}}
+\DeclareUnicodeCharacter{1EDD}{\`{\vno}}
+\DeclareUnicodeCharacter{1EDC}{\`{\vnO}}
+\DeclareUnicodeCharacter{1EDF}{\vnh{\vno}}
+\DeclareUnicodeCharacter{1EDE}{\vnh{\vnO}}
+\DeclareUnicodeCharacter{1EE1}{\~{\vno}}
+\DeclareUnicodeCharacter{1EE0}{\~{\vnO}}
+\DeclareUnicodeCharacter{1EE3}{\d{\vno}}
+\DeclareUnicodeCharacter{1EE2}{\d{\vnO}}
+
+% U
 \DeclareUnicodeCharacter{00FA}{\'{u}}
+\DeclareUnicodeCharacter{00DA}{\'{U}}
 \DeclareUnicodeCharacter{00F9}{\`{u}}
-\DeclareUnicodeCharacter{1EE7}{\h{u}}
+\DeclareUnicodeCharacter{00D9}{\`{U}}
+\DeclareUnicodeCharacter{1EE7}{\vnh{u}}
+\DeclareUnicodeCharacter{1EE6}{\vnh{U}}
 \DeclareUnicodeCharacter{0169}{\~{u}}
+\DeclareUnicodeCharacter{0168}{\~{U}}
 \DeclareUnicodeCharacter{1EE5}{\d{u}}
-\DeclareUnicodeCharacter{01B0}{\^{u}}
-\DeclareUnicodeCharacter{1EE9}{\'{u}}
-\DeclareUnicodeCharacter{1EEB}{\`{u}}
-\DeclareUnicodeCharacter{1EED}{\^{u}}
-\DeclareUnicodeCharacter{1EEF}{\~{u}}
-\DeclareUnicodeCharacter{1EF1}{\d{u}}
+\DeclareUnicodeCharacter{1EE4}{\d{U}}
+
+% U horn (Ư)
+\DeclareUnicodeCharacter{01B0}{\vnu}
+\DeclareUnicodeCharacter{01AF}{\vnU}
+\DeclareUnicodeCharacter{1EE9}{\'{\vnu}}
+\DeclareUnicodeCharacter{1EE8}{\'{\vnU}}
+\DeclareUnicodeCharacter{1EEB}{\`{\vnu}}
+\DeclareUnicodeCharacter{1EEA}{\`{\vnU}}
+\DeclareUnicodeCharacter{1EED}{\vnh{\vnu}}
+\DeclareUnicodeCharacter{1EEC}{\vnh{\vnU}}
+\DeclareUnicodeCharacter{1EEF}{\~{\vnu}}
+\DeclareUnicodeCharacter{1EEE}{\~{\vnU}}
+\DeclareUnicodeCharacter{1EF1}{\d{\vnu}}
+\DeclareUnicodeCharacter{1EF0}{\d{\vnU}}
+
+% Y
 \DeclareUnicodeCharacter{00FD}{\'{y}}
+\DeclareUnicodeCharacter{00DD}{\'{Y}}
 \DeclareUnicodeCharacter{1EF3}{\`{y}}
-\DeclareUnicodeCharacter{1EF7}{\h{y}}
+\DeclareUnicodeCharacter{1EF2}{\`{Y}}
+\DeclareUnicodeCharacter{1EF7}{\vnh{y}}
+\DeclareUnicodeCharacter{1EF6}{\vnh{Y}}
 \DeclareUnicodeCharacter{1EF9}{\~{y}}
+\DeclareUnicodeCharacter{1EF8}{\~{Y}}
 \DeclareUnicodeCharacter{1EF5}{\d{y}}
+\DeclareUnicodeCharacter{1EF4}{\d{Y}}
+"""
+
+EX_ENVIRONMENT_DECLS = r"""
+% ex_test and exam package compatibility definitions
+\makeatletter
+\@ifundefined{c@excount}{\newcounter{excount}}{}
+\providecommand{\exname}{Câu}
+\providecommand{\Opensolutionfile}[2]{}
+\providecommand{\Closesolutionfile}[1]{}
+\providecommand{\phanII}[1][]{\par\vspace{1em}\noindent\textbf{\large PHẦN II. #1}\par\vspace{0.5em}}
+\providecommand{\phanIII}[1][]{\par\vspace{1em}\noindent\textbf{\large PHẦN III. #1}\par\vspace{0.5em}}
+\providecommand{\diem}[2][]{\if\relax\detokenize{#2}\relax\else\space\textit{(#2 điểm)}\fi}
+\providecommand{\R}{\mathbb{R}}
+\providecommand{\True}{\textbf{*}}
+\providecommand{\itemch}{\item}
+\@ifundefined{itemchoice}{\newenvironment{itemchoice}{\begin{itemize}}{\end{itemize}}}{}
+
+\@ifundefined{ex}{%
+  \newenvironment{ex}[1][]{%
+    \par\vspace{0.8em}\noindent
+    \refstepcounter{excount}%
+    \textbf{\exname~\theexcount.}%
+    \if\relax\detokenize{#1}\relax\else\space\textbf{(#1)}\fi\space
+  }{%
+    \par\vspace{0.8em}%
+  }%
+}{}
+
+\providecommand{\loigiai}[1]{%
+  \par\vspace{0.4em}\noindent
+  \textit{\textbf{Lời giải.}}~#1\par\vspace{0.4em}%
+}
+
+\providecommand{\shortans}[2][]{%
+  \par\vspace{0.3em}\noindent
+  \textbf{Đáp số:}~#2\par%
+}
+
+\providecommand{\heva}[1]{\left\{\begin{aligned}#1\end{aligned}\right.}
+\providecommand{\hoac}[1]{\left[\begin{aligned}#1\end{aligned}\right.}
+
+\newcommand{\@choiceone}[4]{%
+  \par\vspace{0.2em}\noindent
+  \begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}l}
+    \textbf{A.}~#1 \\ \textbf{B.}~#2 \\ \textbf{C.}~#3 \\ \textbf{D.}~#4
+  \end{tabular*}\par\vspace{0.2em}%
+}
+\newcommand{\@choicetwo}[4]{%
+  \par\vspace{0.2em}\noindent
+  \begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}ll}
+    \textbf{A.}~#1 & \textbf{B.}~#2 \\
+    \textbf{C.}~#3 & \textbf{D.}~#4
+  \end{tabular*}\par\vspace{0.2em}%
+}
+\newcommand{\@choicefour}[4]{%
+  \par\vspace{0.2em}\noindent
+  \begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}llll}
+    \textbf{A.}~#1 & \textbf{B.}~#2 & \textbf{C.}~#3 & \textbf{D.}~#4
+  \end{tabular*}\par\vspace{0.2em}%
+}
+
+\providecommand{\choice}[5][4]{%
+  \ifx1#1\@choiceone{#2}{#3}{#4}{#5}%
+  \else\ifx2#1\@choicetwo{#2}{#3}{#4}{#5}%
+  \else\@choicefour{#2}{#3}{#4}{#5}\fi\fi
+}
+
+\newcommand{\@choiceTFone}[4]{%
+  \par\vspace{0.2em}\noindent
+  \begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}l}
+    \textbf{a)}~#1 \\ \textbf{b)}~#2 \\ \textbf{c)}~#3 \\ \textbf{d)}~#4
+  \end{tabular*}\par\vspace{0.2em}%
+}
+\newcommand{\@choiceTFtwo}[4]{%
+  \par\vspace{0.2em}\noindent
+  \begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}ll}
+    \textbf{a)}~#1 & \textbf{b)}~#2 \\
+    \textbf{c)}~#3 & \textbf{d)}~#4
+  \end{tabular*}\par\vspace{0.2em}%
+}
+\newcommand{\@choiceTFfour}[4]{%
+  \par\vspace{0.2em}\noindent
+  \begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}llll}
+    \textbf{a)}~#1 & \textbf{b)}~#2 & \textbf{c)}~#3 & \textbf{d)}~#4
+  \end{tabular*}\par\vspace{0.2em}%
+}
+
+\providecommand{\choiceTF}[5][4]{%
+  \ifx1#1\@choiceTFone{#2}{#3}{#4}{#5}%
+  \else\ifx2#1\@choiceTFtwo{#2}{#3}{#4}{#5}%
+  \else\@choiceTFfour{#2}{#3}{#4}{#5}\fi\fi
+}
+\providecommand{\choiceTFt}[5][4]{\choiceTF[#1]{#2}{#3}{#4}{#5}}
+
+\@ifundefined{immini}{%
+  \newcommand{\immini}{\@ifstar\@imministar\@immininostar}
+  \newcommand{\@immininostar}[3][]{%
+    \par\noindent
+    \begin{minipage}[t]{0.64\linewidth}
+      #2
+    \end{minipage}\hfill
+    \begin{minipage}[t]{0.33\linewidth}
+      \centering #3
+    \end{minipage}\par
+  }
+  \newcommand{\@imministar}[3][]{%
+    \par\noindent
+    \begin{minipage}[t]{0.33\linewidth}
+      \centering #3
+    \end{minipage}\hfill
+    \begin{minipage}[t]{0.64\linewidth}
+      #2
+    \end{minipage}\par
+  }
+}{}
+\makeatother
 """
 
 
@@ -108,40 +322,23 @@ def normalize_source(source: str) -> str:
 def build_document(source: str) -> str:
     source = normalize_source(source).strip()
     if "\\documentclass" in source:
-        # Full documents may contain T5 fontenc or vietnamese babel which are not installed in Kroki.
-        # Replace T5 with T1 and strip [vietnamese]{babel}.
-        source = re.sub(r"\\usepackage\s*\[\s*T5\s*\]\s*\{\s*fontenc\s*\}", r"\\usepackage[T1]{fontenc}", source)
-        source = re.sub(r"\\usepackage\s*\[\s*vietnamese\s*\]\s*\{\s*babel\s*\}", "", source)
-
+        # Full documents may already load tkz-tab, including in a package list.
         preamble = source.split(r"\begin{document}", 1)[0]
         preamble_clean = re.sub(r"(?m)(?<!\\)%.*$", "", preamble)
         has_tkz_tab = re.search(
             r"\\usepackage\s*(?:\[[^\]]*\]\s*)?\{[^}]*\btkz-tab\b[^}]*\}",
             preamble_clean,
         )
-        has_tkz_euclide = re.search(
-            r"\\usepackage\s*(?:\[[^\]]*\]\s*)?\{[^}]*\btkz-euclide\b[^}]*\}",
-            preamble_clean,
-        )
-        has_pgfplots = re.search(
-            r"\\usepackage\s*(?:\[[^\]]*\]\s*)?\{[^}]*\bpgfplots\b[^}]*\}",
-            preamble_clean,
-        )
-        injections = []
+        injections = ""
         if r"\tkzTab" in source and not has_tkz_tab:
-            injections.append(r"\usepackage{tkz-tab}")
-        if re.search(r"\\tkz(Def|Draw|Label|Get)", source) and not has_tkz_euclide:
-            injections.append(r"\usepackage{tkz-euclide}")
-        if re.search(r"(?:\\begin\{axis\}|\\pgfplotsset|\\addplot)", source) and not has_pgfplots:
-            injections.append(r"\usepackage{pgfplots}\n\pgfplotsset{compat=1.18}")
-        if r"\DeclareUnicodeCharacter{0110}" not in source:
-            injections.append(VIETNAMESE_UNICODE_DECLS)
-
+            injections += "\\usepackage{tkz-tab}\n"
+        if re.search(r"\\begin\{ex\}|\\choice|\\loigiai|\\immini|\\heva|\\hoac", source) and "\\newenvironment{ex}" not in preamble:
+            injections += EX_ENVIRONMENT_DECLS + "\n"
         if injections:
-            source = source.replace(r"\begin{document}", "\n".join(injections) + "\n\\begin{document}", 1)
+            source = source.replace(r"\begin{document}", f"{injections}\\begin{{document}}", 1)
         return source
 
-    return f"""\\documentclass[tikz,border=10pt]{{standalone}}
+    return f"""\\documentclass[tikz,varwidth=18cm,border=10pt]{{standalone}}
 \\usepackage[T1]{{fontenc}}
 \\usepackage[utf8]{{inputenc}}
 \\usepackage{{amsmath,amssymb}}
@@ -151,6 +348,7 @@ def build_document(source: str) -> str:
 \\usepackage{{tkz-euclide}}
 \\usetikzlibrary{{arrows.meta,automata,backgrounds,calc,decorations.pathmorphing,intersections,matrix,patterns,positioning,shapes.geometric}}
 {VIETNAMESE_UNICODE_DECLS}
+{EX_ENVIRONMENT_DECLS}
 \\begin{{document}}
 {source}
 \\end{{document}}

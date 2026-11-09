@@ -115,7 +115,6 @@ export default function TexToPdfPage() {
     }
   });
   const [dpi, setDpi] = useState(180);
-  const [autoRender, setAutoRender] = useState(false);
   const [previewTab, setPreviewTab] = useState('image'); // 'image' | 'pdf'
   const [zoom, setZoom] = useState(100);
   const [svgText, setSvgText] = useState(null);
@@ -270,15 +269,6 @@ export default function TexToPdfPage() {
     }
   }, [addToast, setResult]);
 
-  // Optional auto-render debounce
-  useEffect(() => {
-    if (!autoRender) return;
-    const timer = setTimeout(() => {
-      executeRender(input, dpi, true);
-    }, 700);
-    return () => clearTimeout(timer);
-  }, [input, dpi, autoRender, executeRender]);
-
   const handleManualCompile = () => {
     executeRender(input, dpi, false);
   };
@@ -359,17 +349,9 @@ export default function TexToPdfPage() {
             <div className="tikz-panel-heading">
               <div>
                 <strong>Mã TeX, TikZ hoặc JSON</strong>
-                <span>{input.length.toLocaleString()} / 20.000 ký tự</span>
+                <span>{input.length.toLocaleString()} / 100.000 ký tự</span>
               </div>
               <div className="tikz-heading-actions">
-                <label className="tikz-autorender-toggle" title="Tự động vẽ khi sửa mã">
-                  <input
-                    type="checkbox"
-                    checked={autoRender}
-                    onChange={e => setAutoRender(e.target.checked)}
-                  />
-                  <span>⚡ Tự động vẽ</span>
-                </label>
                 <button
                   type="button"
                   className="tool-btn"
@@ -409,7 +391,7 @@ export default function TexToPdfPage() {
                 type="button"
                 className="btn btn-primary"
                 onClick={handleManualCompile}
-                disabled={loading || input.length > 20000}
+                disabled={loading || input.length > 100000}
               >
                 {loading ? <><span className="spinner" /> Đang vẽ Kroki...</> : '▶ Biên dịch ngay'}
               </button>

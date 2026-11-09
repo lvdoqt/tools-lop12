@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import DOMPurify from 'dompurify';
-import { api, releaseResult } from '../api';
+import { api, releaseResult, API_BASE } from '../api';
 import { useFileResult } from '../useFileResult';
 import { ToastContainer, useToast } from '../components/Toast';
 import TikzLibrary from '../components/TikzLibrary';
@@ -102,19 +102,21 @@ export default function TikzEditorPage() {
   });
   const [compiled, setCompiled] = useState(null);
   const [dpi, setDpi] = useState(180);
-  const [autoRender, setAutoRender] = useState(true);
   const [zoom, setZoom] = useState(100);
   const [svgText, setSvgText] = useState(null);
   const [compileStatus, setCompileStatus] = useState('idle'); // 'idle' | 'rendering' | 'success' | 'error'
   const [compileError, setCompileError] = useState(null);
   const [result, setResult] = useFileResult();
   const [loading, setLoading] = useState(false);
+  const [savingCloud, setSavingCloud] = useState(false);
+  const [savedCloudId, setSavedCloudId] = useState(null);
+  const [refreshSignal, setRefreshSignal] = useState(0);
   const { toasts, addToast } = useToast();
 
   const abortControllerRef = useRef(null);
   const currentRenderIdRef = useRef(0);
 
-  // Autosave draft
+  // Autosave draft to localStorage
   useEffect(() => {
     const timer = setTimeout(() => {
       try { localStorage.setItem('tools-all-tikz-draft', source); } catch { /* Manual save reports storage errors */ }
@@ -123,10 +125,10 @@ export default function TikzEditorPage() {
   }, [source]);
 
   // Core render implementation via Kroki TeX Engine
-  const executeRender = useCallback(async (codeToRender, targetDpi, isAutomatic = false) => {
+  const executeRender = useCallback(async (codeToRender, targetDpi) => {
     const trimmed = (codeToRender || '').trim();
     if (!trimmed) {
-      if (!isAutomatic) addToast('⚠️ Hãy nhập mã TikZ.', 'warning');
+      addToast('⚠️ Hãy nhập mã TikZ.', 'warning');
       return;
     }
 
@@ -139,6 +141,7 @@ export default function TikzEditorPage() {
     const renderId = ++currentRenderIdRef.current;
     setLoading(true);
     setCompileStatus('rendering');
+    setSavedCloudId(null);
 
     try {
       const outputId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `tikz-${Date.now()}`;
@@ -221,18 +224,13 @@ export default function TikzEditorPage() {
 
       setResult(fileResult);
       setCompiled({ source: trimmed, dpi: targetDpi, svg, id: outputId });
-
-      if (!isAutomatic) {
-        addToast('✅ Đã render hình TikZ (Kroki SVG)', 'success');
-      }
+      addToast('✅ Đã vẽ hình TikZ thành công qua Kroki TeX Engine', 'success');
     } catch (err) {
       if (abortController.signal.aborted) return;
       if (renderId === currentRenderIdRef.current) {
         setCompileStatus('error');
         setCompileError(err.message || 'Lỗi biên dịch TikZ');
-        if (!isAutomatic) {
-          addToast(`❌ ${err.message}`, 'error', 6000);
-        }
+        addToast(`❌ ${err.message}`, 'error', 6000);
       }
     } finally {
       if (renderId === currentRenderIdRef.current) {
@@ -241,19 +239,36 @@ export default function TikzEditorPage() {
     }
   }, [addToast, setResult]);
 
-  // Debounced auto-render when source or DPI changes
-  useEffect(() => {
-    if (!autoRender) return;
-    const timer = setTimeout(() => {
-      executeRender(source, dpi, true);
-    }, 700);
-
-    return () => clearTimeout(timer);
-  }, [source, dpi, autoRender, executeRender]);
-
   // Manual render trigger
   const handleManualRender = () => {
-    executeRender(source, dpi, false);
+    executeRender(source, dpi);
+  };
+
+  // Upload to Cloudinary & save to Supabase
+  const handleUploadToCloud = async () => {
+    if (!compiled?.svg || savingCloud || savedCloudId === compiled?.id) return;
+    setSavingCloud(true);
+    try {
+      const res = await fetch(`${API_BASE}/tikz/library`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source: compiled.source,
+          svg: compiled.svg,
+          dpi: compiled.dpi || dpi,
+          title: `Hình TikZ ${new Date().toLocaleString('vi-VN')}`,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Không upload được lên Cloud.');
+      setSavedCloudId(compiled.id);
+      setRefreshSignal(prev => prev + 1);
+      addToast(`✅ Đã upload lên Cloudinary & lưu “${data.title}” vào Supabase`, 'success');
+    } catch (err) {
+      addToast(`❌ Lỗi upload lên Cloud: ${err.message}`, 'error', 6000);
+    } finally {
+      setSavingCloud(false);
+    }
   };
 
   const loadTemplate = template => {
@@ -306,7 +321,7 @@ export default function TikzEditorPage() {
           <div className="tool-header-icon tikz-header-icon">△</div>
           <h1>TikZ <span className="gradient-text">Editor</span></h1>
           <p>
-            Biên dịch hình TikZ tự động qua <strong>Kroki TeX Engine</strong> thành vector <strong>SVG (.svg)</strong> giữ nét khi phóng to, hỗ trợ <code>tkz-tab</code>, <code>tkz-euclide</code>, <code>pgfplots</code>.
+            Biên dịch hình TikZ qua <strong>Kroki TeX Engine</strong> thành vector <strong>SVG (.svg)</strong> giữ nét khi phóng to, hỗ trợ đầy đủ tiếng Việt, <code>tkz-tab</code>, <code>tkz-euclide</code>, <code>pgfplots</code>.
           </p>
         </div>
 
@@ -333,14 +348,6 @@ export default function TikzEditorPage() {
                 <span>{source.length.toLocaleString()} / 20.000 ký tự</span>
               </div>
               <div className="tikz-heading-actions">
-                <label className="tikz-autorender-toggle" title="Tự động biên dịch sau khi sửa mã">
-                  <input
-                    type="checkbox"
-                    checked={autoRender}
-                    onChange={e => setAutoRender(e.target.checked)}
-                  />
-                  <span>⚡ Tự động vẽ</span>
-                </label>
                 <button className="tool-btn" onClick={() => loadTemplate(TEMPLATES[0])}>Mẫu</button>
                 <button className="tool-btn" onClick={saveDraft}>💾 Lưu mã</button>
               </div>
@@ -369,7 +376,7 @@ export default function TikzEditorPage() {
                 onClick={handleManualRender}
                 disabled={loading || source.length > 20000}
               >
-                {loading ? <><span className="spinner" /> Đang vẽ Kroki...</> : '▶ Vẽ ngay'}
+                {loading ? <><span className="spinner" /> Đang vẽ Kroki...</> : '▶ Vẽ hình'}
               </button>
             </div>
 
@@ -382,7 +389,7 @@ export default function TikzEditorPage() {
             <div className="alert alert-info tikz-privacy">
               <span>⚡</span>
               <span>
-                Render tự động qua <strong>Kroki TeX Engine</strong> thành vector <strong>SVG (.svg)</strong> — phóng to không vỡ nét. Tương thích <code>tkz-tab</code>, <code>tkz-euclide</code>, <code>pgfplots</code> và nhãn tiếng Việt.
+                Biên dịch qua <strong>Kroki TeX Engine</strong> thành vector <strong>SVG (.svg)</strong> — phóng to không vỡ nét. Hỗ trợ tiếng Việt đầy đủ, <code>tkz-tab</code>, <code>tkz-euclide</code>, <code>pgfplots</code>. Nhấn “Upload lên Cloud” để lưu ảnh lên Cloudinary và mã vào Supabase.
               </span>
             </div>
           </section>
@@ -471,7 +478,7 @@ export default function TikzEditorPage() {
               ) : (
                 <div className="tikz-empty">
                   <span>△</span>
-                  <p>Nhập mã TikZ để tự động vẽ hình qua Kroki TeX Engine</p>
+                  <p>Nhập mã TikZ và nhấn “Vẽ hình” để xem kết quả qua Kroki TeX Engine</p>
                 </div>
               )}
             </div>
@@ -515,6 +522,22 @@ export default function TikzEditorPage() {
                 >
                   Tải TEX
                 </a>
+
+                <button
+                  type="button"
+                  className="btn tikz-upload-cloud-btn"
+                  onClick={handleUploadToCloud}
+                  disabled={!compiled?.svg || savingCloud || savedCloudId === compiled?.id}
+                  title="Upload ảnh lên Cloudinary và lưu mã vào Supabase"
+                >
+                  {savingCloud ? (
+                    <><span className="spinner" /> Đang upload...</>
+                  ) : savedCloudId === compiled?.id ? (
+                    '✓ Đã lưu lên Cloud'
+                  ) : (
+                    '☁️ Upload lên Cloud'
+                  )}
+                </button>
               </div>
             )}
           </section>
@@ -523,11 +546,15 @@ export default function TikzEditorPage() {
         <TikzLibrary
           compiled={compiled}
           addToast={addToast}
+          refreshSignal={refreshSignal}
+          externalSavedId={savedCloudId}
+          onSaved={id => setSavedCloudId(id)}
           onOpen={drawing => {
             setSource(drawing.source);
             setDpi(drawing.dpi || 180);
             setCompiled(null);
             setSvgText(null);
+            setSavedCloudId(null);
             setZoom(100);
             const tex = URL.createObjectURL(new Blob([drawing.source], { type: 'application/x-tex;charset=utf-8' }));
             setResult({

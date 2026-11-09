@@ -119,7 +119,7 @@ async def health_check():
 # ===================================================
 
 class TikzRenderRequest(BaseModel):
-    source: str = Field(min_length=1, max_length=20_000)
+    source: str = Field(min_length=1, max_length=100_000)
     dpi: int = Field(default=180, ge=72, le=300)
 
 
