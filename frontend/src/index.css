@@ -717,10 +717,18 @@ body {
 .tikz-workspace { display: grid; grid-template-columns: minmax(0,1.05fr) minmax(380px,.95fr); gap: 1.25rem; align-items: stretch; }
 .tikz-workspace .glass-panel { margin: 0; padding: 1.35rem; }
 .tikz-code-panel, .tikz-preview-panel { min-width: 0; }
-.tikz-panel-heading { display: flex; align-items: center; justify-content: space-between; min-height: 38px; margin-bottom: .75rem; }
+.tikz-panel-heading { display: flex; align-items: center; justify-content: space-between; min-height: 38px; margin-bottom: .75rem; flex-wrap: wrap; gap: .5rem; }
 .tikz-panel-heading strong, .tikz-panel-heading span { display: block; }
 .tikz-panel-heading strong { font-size: .95rem; }
-.tikz-heading-actions { display: flex; gap: .45rem; }
+.tikz-heading-actions { display: flex; align-items: center; gap: .45rem; }
+.tikz-zoom-toolbar { display: inline-flex; align-items: center; gap: .25rem; background: rgba(0,0,0,.04); padding: 3px 6px; border-radius: var(--radius-sm); border: 1px solid var(--border-glass); }
+.tikz-zoom-btn { padding: .2rem .5rem; font-size: .78rem; font-weight: 700; line-height: 1.1; min-width: 1.8rem; text-align: center; }
+.tikz-zoom-reset { font-variant-numeric: tabular-nums; min-width: 3.2rem; cursor: pointer; }
+.tikz-autorender-toggle { display: inline-flex; align-items: center; gap: .45rem; font-size: .8rem; font-weight: 700; color: var(--text-secondary); cursor: pointer; user-select: none; }
+.tikz-autorender-toggle input[type="checkbox"] { accent-color: var(--accent-purple); width: 15px; height: 15px; cursor: pointer; margin: 0; }
+.tikz-engine-badge { display: inline-flex; align-items: center; gap: .3rem; font-size: .72rem; font-weight: 700; padding: .2rem .5rem; border-radius: var(--radius-sm); background: rgba(124,58,237,.1); color: var(--accent-purple); }
+.tikz-engine-badge.is-loading { background: rgba(59,130,246,.12); color: #2563eb; }
+.tikz-engine-badge.is-error { background: rgba(239,68,68,.12); color: #dc2626; }
 .tikz-panel-heading span { color: var(--text-muted); font-size: .72rem; margin-top: 2px; }
 .tikz-textarea { width: 100%; height: 430px; resize: vertical; padding: 1rem; border: 1px solid var(--border-glass); border-radius: var(--radius-md); background: #fff; color: #253044; font: .82rem/1.6 'JetBrains Mono', monospace; outline: none; tab-size: 2; }
 .tikz-textarea:focus { border-color: var(--accent-purple); box-shadow: 0 0 0 3px rgba(124,58,237,.12); }
@@ -728,9 +736,14 @@ body {
 .tikz-compile-bar label { display: flex; align-items: center; gap: .5rem; color: var(--text-secondary); font-size: .8rem; font-weight: 700; }
 .tikz-compile-bar select { padding: 8px 10px; border: 1px solid var(--border-glass); border-radius: var(--radius-sm); background: #fff; font: inherit; }
 .tikz-privacy { margin: 1rem 0 0; font-size: .77rem; }
+.tikz-error-banner { margin: .75rem 0 0; padding: .6rem .85rem; font-size: .78rem; background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; border-radius: var(--radius-sm); white-space: pre-wrap; word-break: break-word; }
 .tikz-preview-panel { display: flex; flex-direction: column; }
-.tikz-canvas { flex: 1; min-height: 430px; display: grid; place-items: center; overflow: auto; padding: 1.25rem; border: 1px dashed var(--border-glass); border-radius: var(--radius-md); background-color: #fff; background-image: linear-gradient(45deg,#f5f1e8 25%,transparent 25%),linear-gradient(-45deg,#f5f1e8 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#f5f1e8 75%),linear-gradient(-45deg,transparent 75%,#f5f1e8 75%); background-size: 20px 20px; background-position: 0 0,0 10px,10px -10px,-10px 0; }
+.tikz-canvas { position: relative; flex: 1; min-height: 430px; display: grid; place-items: center; overflow: auto; padding: 1.25rem; border: 1px dashed var(--border-glass); border-radius: var(--radius-md); background-color: #fff; background-image: linear-gradient(45deg,#f5f1e8 25%,transparent 25%),linear-gradient(-45deg,#f5f1e8 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#f5f1e8 75%),linear-gradient(-45deg,transparent 75%,#f5f1e8 75%); background-size: 20px 20px; background-position: 0 0,0 10px,10px -10px,-10px 0; }
+.tikz-zoom-container { display: inline-flex; align-items: center; justify-content: center; transition: transform .12s cubic-bezier(0.2, 0, 0, 1); will-change: transform; max-width: 100%; }
+.tikz-svg-render { display: inline-block; filter: drop-shadow(0 8px 18px rgba(43,33,17,.12)); }
+.tikz-svg-render svg { display: block; max-width: 100%; max-height: 540px; height: auto; }
 .tikz-canvas img { display: block; max-width: 100%; max-height: 540px; object-fit: contain; filter: drop-shadow(0 8px 18px rgba(43,33,17,.12)); }
+.tikz-download-svg { background: linear-gradient(135deg, #7c3aed, #6366f1); border: none; color: #fff; font-weight: 700; }
 .tikz-empty { color: var(--text-muted); text-align: center; }
 .tikz-empty span { display: block; color: rgba(124,58,237,.3); font-size: 4rem; }
 .tikz-empty p { font-size: .85rem; }
