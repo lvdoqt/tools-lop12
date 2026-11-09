@@ -47,9 +47,9 @@ const ALL_TOOLS = [
   {
     id: 'tex-pdf', path: '/tex-to-pdf', category: 'convert',
     icon: '🧮', iconClass: 'green',
-    title: 'TeX → PDF',
-    desc: 'Biên dịch file LaTeX (.tex) sang PDF. Hỗ trợ công thức toán phức tạp.',
-    tags: [{ text: 'Mới', cls: 'new' }, { text: 'LaTeX' }, { text: 'PDF' }],
+    title: 'TeX → PDF & Ảnh',
+    desc: 'Biên dịch file LaTeX (.tex), TikZ sang PDF và hình ảnh (SVG, PNG). Hỗ trợ công thức toán, bảng biến thiên và hình học.',
+    tags: [{ text: 'Mới', cls: 'new' }, { text: 'LaTeX' }, { text: 'PDF' }, { text: 'Ảnh' }],
     active: true,
   },
   {

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Camera,
+  CameraOff,
   Upload,
   Download,
   CheckCircle,
@@ -211,10 +212,12 @@ export default function GradePage() {
 
   // Camera & Scanning State
   const videoRef = useRef(null);
+  const streamRef = useRef(null);
   const cameraInputRef = useRef(null);
   const galleryInputRef = useRef(null);
 
   const [cameraActive, setCameraActive] = useState(false);
+  const [cameraEnabled, setCameraEnabled] = useState(true);
   const [facingMode, setFacingMode] = useState('environment');
   const [isProcessing, setIsProcessing] = useState(false);
   const [isStartingCamera, setIsStartingCamera] = useState(false);
@@ -238,7 +241,7 @@ export default function GradePage() {
 
   // Handle camera lifecycle
   useEffect(() => {
-    if (activeTab === 'scan' && !currentResult) {
+    if (activeTab === 'scan' && !currentResult && cameraEnabled) {
       const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
       if (window.isSecureContext || isLocal) {
         startCamera();
@@ -249,19 +252,27 @@ export default function GradePage() {
     return () => {
       stopCamera();
     };
-  }, [activeTab, facingMode, currentResult]);
+  }, [activeTab, facingMode, currentResult, cameraEnabled]);
 
-  const startCamera = async () => {
+  const startCamera = async (overrideFacing) => {
     setIsStartingCamera(true);
     setCameraError(null);
     setErrorMessage(null);
+
+    // Stop existing stream if running
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => {
+        try { track.stop(); } catch {}
+      });
+      streamRef.current = null;
+    }
 
     const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
     if (!window.isSecureContext && !isLocal) {
       setCameraActive(false);
       setIsStartingCamera(false);
       setCameraError(
-        'Trình duyệt điện thoại chặn WebRTC trực tiếp khi truy cập qua mạng LAN (HTTP không có SSL). Bạn hãy bấm nút "Chụp ảnh bài thi" màu xanh bên dưới để mở thẳng Camera máy chụp siêu nét và tự động chấm!'
+        'Trình duyệt chặn WebRTC trực tiếp khi truy cập qua mạng LAN (HTTP không có SSL). Bạn hãy bấm nút "Chụp ảnh bài thi" màu xanh bên dưới để mở thẳng Camera máy chụp siêu nét và tự động chấm!'
       );
       return;
     }
@@ -275,21 +286,22 @@ export default function GradePage() {
       return;
     }
 
+    const targetFacing = overrideFacing || facingMode;
     const constraintSets = [
       {
         video: {
-          facingMode: { ideal: facingMode },
+          facingMode: { ideal: targetFacing },
           width: { ideal: 1920 },
           height: { ideal: 1080 },
         },
         audio: false,
       },
       {
-        video: { facingMode: { ideal: facingMode } },
+        video: { facingMode: { ideal: targetFacing } },
         audio: false,
       },
       {
-        video: { facingMode: facingMode },
+        video: { facingMode: targetFacing },
         audio: false,
       },
       {
@@ -310,20 +322,23 @@ export default function GradePage() {
       }
     }
 
-    if (stream && videoRef.current) {
-      videoRef.current.srcObject = stream;
-      videoRef.current.setAttribute('autoplay', 'true');
-      videoRef.current.setAttribute('playsinline', 'true');
-      videoRef.current.setAttribute('muted', 'true');
-      try {
-        await videoRef.current.play();
-      } catch (e) {
-        console.warn('Video play error:', e);
+    if (stream) {
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.setAttribute('autoplay', 'true');
+        videoRef.current.setAttribute('playsinline', 'true');
+        videoRef.current.setAttribute('muted', 'true');
+        try {
+          await videoRef.current.play();
+        } catch (e) {
+          console.warn('Video play error:', e);
+        }
       }
       setCameraActive(true);
       setCameraError(null);
     } else {
-      setCameraActive(false);
+      stopCamera();
       let msg = 'Không thể mở Camera trực tiếp: ';
       if (lastErr?.name === 'NotAllowedError' || lastErr?.name === 'PermissionDeniedError') {
         msg += 'Bạn chưa cấp quyền máy ảnh trong trình duyệt. Hãy cho phép quyền hoặc bấm nút "Chụp ảnh bài thi".';
@@ -340,9 +355,13 @@ export default function GradePage() {
   };
 
   const stopCamera = () => {
-    if (videoRef.current && videoRef.current.srcObject) {
-      const tracks = videoRef.current.srcObject.getTracks();
-      tracks.forEach(track => track.stop());
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => {
+        try { track.stop(); } catch {}
+      });
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
     setCameraActive(false);
@@ -442,10 +461,12 @@ export default function GradePage() {
       submissions: [newSub, ...(e.submissions || [])],
     }));
     setCurrentResult(null);
+    setCameraEnabled(true);
   };
 
   const handleDiscardCurrent = () => {
     setCurrentResult(null);
+    setCameraEnabled(true);
   };
 
   // Import TNMaker Excel
@@ -765,18 +786,18 @@ export default function GradePage() {
             {!currentResult ? (
               <div className="viewport-card">
                 <div className="viewport-screen">
-                  {cameraActive ? (
-                    <>
-                      <video
-                        ref={videoRef}
-                        autoPlay
-                        playsInline
-                        muted
-                        className="viewport-video"
-                      />
-                      <div className="scanner-laser" />
-                    </>
-                  ) : (
+                  {/* Video luồng camera trực tiếp: luôn mounted trong DOM để videoRef không bị null */}
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="viewport-video"
+                    style={{ display: cameraActive ? 'block' : 'none' }}
+                  />
+                  {cameraActive && <div className="scanner-laser" />}
+
+                  {!cameraActive && (
                     <div className="camera-capture-box">
                       <div className="camera-box-inner">
                         <div className="camera-box-badge">
@@ -815,7 +836,10 @@ export default function GradePage() {
                           <button
                             type="button"
                             className="btn-secondary-action"
-                            onClick={startCamera}
+                            onClick={() => {
+                              setCameraEnabled(true);
+                              startCamera();
+                            }}
                             disabled={isStartingCamera}
                             title="Thử kích hoạt luồng camera trực tiếp trong trình duyệt"
                           >
@@ -884,17 +908,32 @@ export default function GradePage() {
                 {/* Camera Controls Bar */}
                 <div className="viewport-controls">
                   {cameraActive ? (
-                    <button
-                      className="btn-icon-secondary"
-                      onClick={toggleCameraFacing}
-                      title="Đổi camera trước / sau"
-                    >
-                      <RotateCcw size={20} />
-                    </button>
+                    <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                      <button
+                        className="btn-icon-secondary"
+                        onClick={toggleCameraFacing}
+                        title="Đổi camera trước / sau"
+                      >
+                        <RotateCcw size={20} />
+                      </button>
+                      <button
+                        className="btn-icon-secondary"
+                        onClick={() => {
+                          setCameraEnabled(false);
+                          stopCamera();
+                        }}
+                        title="Tắt Camera trực tiếp (dùng nút chụp ảnh)"
+                      >
+                        <CameraOff size={20} />
+                      </button>
+                    </div>
                   ) : (
                     <button
                       className="btn-icon-secondary"
-                      onClick={startCamera}
+                      onClick={() => {
+                        setCameraEnabled(true);
+                        startCamera();
+                      }}
                       disabled={isStartingCamera}
                       title="Thử bật Camera trực tiếp (WebRTC)"
                     >

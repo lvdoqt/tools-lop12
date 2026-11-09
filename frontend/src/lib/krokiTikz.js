@@ -85,6 +85,13 @@ export function buildKrokiDocument(source) {
   doc = doc.replace(/^```[\w+-]*\s*$/gm, '').trim();
 
   if (doc.includes('\\documentclass')) {
+    // Replace T5 fontenc with T1 because Kroki lacks vntex t5enc.def
+    doc = doc.replace(/\\usepackage\s*\[\s*T5\s*\]\s*\{\s*fontenc\s*\}/g, '\\usepackage[T1]{fontenc}');
+    // Remove unsupported vietnamese babel option
+    doc = doc.replace(/\\usepackage\s*\[\s*vietnamese\s*\]\s*\{\s*babel\s*\}/g, '');
+    // Cap pgfplots compat
+    doc = doc.replace(/(\\pgfplotsset\s*\{\s*compat\s*=\s*)([2-9]\.\d+|1\.(?:19|\d{3,}))(\s*\})/g, '$11.18$3');
+
     // If user provided a full document, inject missing packages if needed
     const preamble = doc.split('\\begin{document}')[0];
     const preambleClean = preamble.replace(/%.*$/gm, '');
@@ -98,6 +105,9 @@ export function buildKrokiDocument(source) {
     }
     if (/(?:\\begin\{axis\}|\\pgfplotsset|\\addplot)/.test(doc) && !/\\usepackage\s*(?:\[[^\]]*\]\s*)?\{[^}]*\bpgfplots\b[^}]*\}/.test(preambleClean)) {
       injections += '\\usepackage{pgfplots}\n\\pgfplotsset{compat=1.18}\n';
+    }
+    if (!doc.includes('\\DeclareUnicodeCharacter{0110}')) {
+      injections += VIETNAMESE_DECLS + '\n';
     }
 
     if (injections) {

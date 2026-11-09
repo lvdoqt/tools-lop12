@@ -108,15 +108,37 @@ def normalize_source(source: str) -> str:
 def build_document(source: str) -> str:
     source = normalize_source(source).strip()
     if "\\documentclass" in source:
-        # Full documents may already load packages
+        # Full documents may contain T5 fontenc or vietnamese babel which are not installed in Kroki.
+        # Replace T5 with T1 and strip [vietnamese]{babel}.
+        source = re.sub(r"\\usepackage\s*\[\s*T5\s*\]\s*\{\s*fontenc\s*\}", r"\\usepackage[T1]{fontenc}", source)
+        source = re.sub(r"\\usepackage\s*\[\s*vietnamese\s*\]\s*\{\s*babel\s*\}", "", source)
+
         preamble = source.split(r"\begin{document}", 1)[0]
         preamble_clean = re.sub(r"(?m)(?<!\\)%.*$", "", preamble)
         has_tkz_tab = re.search(
             r"\\usepackage\s*(?:\[[^\]]*\]\s*)?\{[^}]*\btkz-tab\b[^}]*\}",
             preamble_clean,
         )
+        has_tkz_euclide = re.search(
+            r"\\usepackage\s*(?:\[[^\]]*\]\s*)?\{[^}]*\btkz-euclide\b[^}]*\}",
+            preamble_clean,
+        )
+        has_pgfplots = re.search(
+            r"\\usepackage\s*(?:\[[^\]]*\]\s*)?\{[^}]*\bpgfplots\b[^}]*\}",
+            preamble_clean,
+        )
+        injections = []
         if r"\tkzTab" in source and not has_tkz_tab:
-            source = source.replace(r"\begin{document}", "\\usepackage{tkz-tab}\n\\begin{document}", 1)
+            injections.append(r"\usepackage{tkz-tab}")
+        if re.search(r"\\tkz(Def|Draw|Label|Get)", source) and not has_tkz_euclide:
+            injections.append(r"\usepackage{tkz-euclide}")
+        if re.search(r"(?:\\begin\{axis\}|\\pgfplotsset|\\addplot)", source) and not has_pgfplots:
+            injections.append(r"\usepackage{pgfplots}\n\pgfplotsset{compat=1.18}")
+        if r"\DeclareUnicodeCharacter{0110}" not in source:
+            injections.append(VIETNAMESE_UNICODE_DECLS)
+
+        if injections:
+            source = source.replace(r"\begin{document}", "\n".join(injections) + "\n\\begin{document}", 1)
         return source
 
     return f"""\\documentclass[tikz,border=10pt]{{standalone}}
