@@ -23,6 +23,7 @@ MCQ_LABEL = re.compile(r'(?<!\S)([ABCD])\s*[.)]')
 CLOZE_HINT_RE = re.compile(r'(?:blanks?\s+from\s+\d+\s+to\s+\d+|\(\d+\)_{3,}|chỗ\s+trống)', re.I)
 LISTEN_HINT_RE = re.compile(r'(?:listen|recording|audio|nghe)', re.I)
 GROUP_INDICATOR_RE = re.compile(r'^(?:Read\s+the\s+following|Mark\s+the\s+letter|Section\s+\d+|LISTENING|PART\s+\d+|PHẦN\s+[IVX]+)', re.I)
+GROUP_TAG_RE = re.compile(r'<\s*(#)?\s*g\s*([0-3])\s*>', re.I)
 MAX_UPLOAD = 4 * 1024 * 1024
 MAX_OUTPUT = 4 * 1024 * 1024
 
@@ -63,6 +64,25 @@ def plain(blocks):
     return '\n'.join(text_map(p)[0] for p in paragraphs(blocks))
 
 
+def strip_group_tags_from_block(block):
+    """Remove <g0>, <#g2>, etc. from runs so tags do not appear in the exported DOCX."""
+    for p in paragraphs([block]):
+        nodes = list(p.iter(tag('t')))
+        full_text = ''.join(n.text or '' for n in nodes)
+        matches = list(GROUP_TAG_RE.finditer(full_text))
+        if not matches:
+            continue
+        for m in reversed(matches):
+            start, end = m.span()
+            offset = 0
+            for n in nodes:
+                t = n.text or ''
+                l, r = max(0, start - offset), min(len(t), end - offset)
+                if l < r:
+                    n.text = t[:l] + t[r:]
+                offset += len(t)
+
+
 @dataclass
 class Question:
     number: int
@@ -72,6 +92,16 @@ class Question:
     options: list = field(default_factory=list)
     errors: list = field(default_factory=list)
     option_order: tuple = (0, 1, 2, 3)
+
+
+@dataclass
+class ExamGroup:
+    index: int
+    name: str
+    header: list = field(default_factory=list)
+    questions: list = field(default_factory=list)
+    fixed_position: bool = False
+    mode: int = 3
 
 
 class Exam:
@@ -104,6 +134,8 @@ class Exam:
         self.prefix = []
         self.headings = {}
         self.sections = {}
+        self.groups = []
+        self.group_configs = {}
         self.freeze_map = {}
         self.errors, self.warnings = [], []
         self.seen = []
@@ -118,11 +150,11 @@ class Exam:
                 raise ValueError('Tài liệu có khối nội dung chưa hỗ trợ. Hãy lưu câu hỏi bằng đoạn văn Word.')
             raw_blocks.append(block)
 
-        # Check if document has standard PHẦN I, II, III
+        has_g_tags = any(GROUP_TAG_RE.search(text_map(b)[0]) for b in raw_blocks if b.tag == tag('p'))
         has_phan = any(SECTION.match(text_map(b)[0]) for b in raw_blocks if b.tag == tag('p'))
 
-        if self.subject == 'toan' or has_phan:
-            # Traditional section parsing (PHẦN I, II, III)
+        if self.subject == 'toan' and not has_g_tags and has_phan:
+            # Traditional section parsing (PHẦN I, II, III) for Math
             self.headings = {s: [] for s in ('I', 'II', 'III')}
             self.sections = {s: [] for s in self.headings}
             section, current, solving = None, None, False
@@ -159,32 +191,72 @@ class Exam:
             if [order_map[s] for s in seen] != sorted(order_map[s] for s in seen):
                 raise ValueError('Các tiêu đề PHẦN phải xuất hiện theo đúng thứ tự I, II, III.')
             self.seen = seen
+            for idx, s in enumerate(self.seen, 1):
+                eg = ExamGroup(idx, s, self.headings[s], self.sections[s], fixed_position=True, mode=3 if s == 'I' else 2)
+                self.groups.append(eg)
+                self.group_configs[s] = {'fixed_position': True, 'mode': eg.mode}
+                self.freeze_map[s] = (eg.mode in (0, 2))
         else:
-            # Group-based parsing for English without explicit PHẦN headers
-            groups = []
+            # Group-based parsing for English, or files with <g> tags
+            parsed_groups = []
             curr_hdr = []
             curr_qs = []
             curr_q = None
-            solving = False
+            curr_fixed = False
+            curr_mode = 3
+            curr_tag_found = False
             exam_started = False
+            solving = False
 
             for block in raw_blocks:
                 value = text_map(block)[0] if block.tag == tag('p') else ''
+                tag_match = GROUP_TAG_RE.search(value) if block.tag == tag('p') else None
                 q_match = QUESTION.match(value) if block.tag == tag('p') else None
                 is_hdr_indicator = bool(GROUP_INDICATOR_RE.match(value)) if block.tag == tag('p') else False
 
-                if q_match:
+                if tag_match:
+                    new_fixed = bool(tag_match.group(1))
+                    new_mode = int(tag_match.group(2))
+                    if curr_qs:
+                        parsed_groups.append({
+                            'header': curr_hdr,
+                            'questions': curr_qs,
+                            'fixed_position': curr_fixed,
+                            'mode': curr_mode,
+                            'has_tag': curr_tag_found,
+                        })
+                        curr_hdr = [block]
+                        curr_qs = []
+                        curr_q = None
+                        curr_fixed = new_fixed
+                        curr_mode = new_mode
+                        curr_tag_found = True
+                        solving = False
+                    else:
+                        curr_fixed = new_fixed
+                        curr_mode = new_mode
+                        curr_tag_found = True
+                        curr_hdr.append(block)
+                elif q_match:
                     exam_started = True
                     solving = False
                     curr_q = Question(int(q_match[1]), [block])
                     curr_qs.append(curr_q)
                 elif curr_q is not None:
-                    if is_hdr_indicator:
+                    if is_hdr_indicator and not curr_tag_found:
                         if curr_qs:
-                            groups.append({'header': curr_hdr, 'questions': curr_qs})
+                            parsed_groups.append({
+                                'header': curr_hdr,
+                                'questions': curr_qs,
+                                'fixed_position': curr_fixed,
+                                'mode': curr_mode,
+                                'has_tag': False,
+                            })
                             curr_hdr = [block]
                             curr_qs = []
                             curr_q = None
+                            curr_fixed = False
+                            curr_mode = 3
                             solving = False
                     else:
                         if SOLUTION.match(value):
@@ -193,31 +265,67 @@ class Exam:
                 elif exam_started:
                     curr_hdr.append(block)
                 else:
-                    if is_hdr_indicator or curr_hdr:
+                    if is_hdr_indicator or curr_hdr or tag_match:
                         curr_hdr.append(block)
                     else:
                         self.prefix.append(block)
 
             if curr_qs:
-                groups.append({'header': curr_hdr, 'questions': curr_qs})
+                parsed_groups.append({
+                    'header': curr_hdr,
+                    'questions': curr_qs,
+                    'fixed_position': curr_fixed,
+                    'mode': curr_mode,
+                    'has_tag': curr_tag_found,
+                })
 
-            if not groups:
+            if not parsed_groups:
                 raise ValueError('Không tìm thấy câu hỏi nào trong đề (Question 1, Question 2... hoặc Câu 1, Câu 2...).')
 
-            for idx, g in enumerate(groups, 1):
-                hdr_texts = [text_map(b)[0].strip() for b in g['header'] if text_map(b)[0].strip()]
-                combined_hdr = ' '.join(hdr_texts)
-                is_cloze = bool(CLOZE_HINT_RE.search(combined_hdr))
-                is_listen = bool(LISTEN_HINT_RE.search(combined_hdr))
-                freeze = is_cloze or is_listen
+            for idx, g in enumerate(parsed_groups, 1):
+                if not g['has_tag']:
+                    hdr_texts = [text_map(b)[0].strip() for b in g['header'] if text_map(b)[0].strip()]
+                    combined_hdr = ' '.join(hdr_texts)
+                    is_cloze = bool(CLOZE_HINT_RE.search(combined_hdr))
+                    is_listen = bool(LISTEN_HINT_RE.search(combined_hdr))
+                    if is_cloze or is_listen:
+                        g['fixed_position'] = True
+                        g['mode'] = 2
+                    else:
+                        g['fixed_position'] = False
+                        g['mode'] = 3
+
+                clean_hdr = []
+                for b in g['header']:
+                    strip_group_tags_from_block(b)
+                    if b.tag == tag('p') and not text_map(b)[0].strip() and not b.xpath('.//w:drawing | .//w:object | .//m:oMath', namespaces=NS):
+                        continue
+                    clean_hdr.append(b)
+                g['header'] = clean_hdr
 
                 q_min = min(q.number for q in g['questions'])
                 q_max = max(q.number for q in g['questions'])
+                tag_label = f'<{"#" if g["fixed_position"] else ""}g{g["mode"]}>'
                 name = f'Nhóm {idx} (Câu {q_min}–{q_max})'
+
+                eg = ExamGroup(
+                    index=idx,
+                    name=name,
+                    header=g['header'],
+                    questions=g['questions'],
+                    fixed_position=g['fixed_position'],
+                    mode=g['mode']
+                )
+                self.groups.append(eg)
                 self.seen.append(name)
                 self.headings[name] = g['header']
                 self.sections[name] = g['questions']
-                self.freeze_map[name] = freeze
+                self.freeze_map[name] = (g['mode'] in (0, 2))
+                self.group_configs[name] = {
+                    'fixed_position': g['fixed_position'],
+                    'mode': g['mode'],
+                    'tag': tag_label
+                }
 
         for section, questions in self.sections.items():
             if section not in self.seen:
@@ -338,12 +446,19 @@ class Exam:
             'total': sum(len(q) for p, q in self.sections.items() if p in self.seen),
             'errors': self.errors,
             'warnings': self.warnings,
-            'sections': [{'part': part, 'count': len(questions), 'freeze': self.freeze_map.get(part, False),
-                          'questions': [
-                              {'number': q.number, 'text': plain(q.blocks), 'answer': q.answer,
-                               'options': q.options, 'solution': plain(q.solution), 'errors': q.errors}
-                              for q in questions]}
-                         for part, questions in self.sections.items() if part in self.seen]
+            'sections': [{
+                'part': g.name,
+                'count': len(g.questions),
+                'fixed_position': g.fixed_position,
+                'mode': g.mode,
+                'tag': f'<{"#" if g.fixed_position else ""}g{g.mode}>',
+                'freeze': (g.mode in (0, 2)),
+                'questions': [
+                    {'number': q.number, 'text': plain(q.blocks), 'answer': q.answer,
+                     'options': q.options, 'solution': plain(q.solution), 'errors': q.errors}
+                    for q in g.questions
+                ]
+            } for g in self.groups if g.name in self.seen]
         }
 
     def _is_mcq_part(self, part):
@@ -497,7 +612,6 @@ def shuffled_blocks(question):
             trim_option(fragment)
             choices.append([fragment])
     if len(choices) != 4:
-        # If not standard 4 choices (e.g. 2 choices for True/False), preserve original blocks
         return deepcopy(question.blocks)
     reordered = [choices[index] for index in question.option_order]
     for index, blocks in enumerate(reordered):
@@ -654,7 +768,8 @@ def render_document(exam, order, code, teacher, department, school):
             number = question_counter if exam.subject == 'tieng_anh' else q_idx
             question_counter += 1
             is_mcq = exam._is_mcq_part(part)
-            blocks = shuffled_blocks(q) if (is_mcq and len(q.options) == 4) else deepcopy(q.blocks)
+            should_shuffle = is_mcq and len(q.options) == 4 and q.option_order != (0, 1, 2, 3)
+            blocks = shuffled_blocks(q) if should_shuffle else deepcopy(q.blocks)
             if teacher and part == 'II' and not is_mcq:
                 mark_tf_answers(blocks, q.answer)
             renumber(blocks[0], number)
@@ -664,7 +779,7 @@ def render_document(exam, order, code, teacher, department, school):
                 body.append(block)
             if teacher and q.solution:
                 solution = deepcopy(q.solution)
-                body.extend(remap_solution(solution, q.option_order) if is_mcq else solution)
+                body.extend(remap_solution(solution, q.option_order) if should_shuffle else solution)
     if exam.sectpr is not None:
         body.append(deepcopy(exam.sectpr))
     output = BytesIO()
@@ -699,7 +814,7 @@ def answer_workbook(variants):
 
 def export_shuffle(content, count=4, start_code='0101', include_solutions=True, seed=None, variant_index=None,
                    department='SỞ GDĐT ................................', school='TRƯỜNG THPT ........................',
-                   subject='toan'):
+                   subject='toan', group_settings=None):
     if not 1 <= count <= 50:
         raise ValueError('Số đề phải từ 1 đến 50.')
     if not re.fullmatch(r'\d{3,4}', start_code) or int(start_code) + count - 1 > 9999:
@@ -712,45 +827,110 @@ def export_shuffle(content, count=4, start_code='0101', include_solutions=True, 
     exam = Exam(content, subject=subject)
     if exam.errors:
         raise ValueError('\n'.join(exam.errors))
-    all_sections = {k: v for k, v in exam.sections.items() if v}
-    possibilities = 1
-    for part, qs in all_sections.items():
-        if not exam.freeze_map.get(part, False):
-            possibilities *= math.factorial(len(qs))
-        if exam._is_mcq_part(part):
-            n_4opt = sum(1 for q in qs if len(q.options) == 4)
-            possibilities *= (24 ** n_4opt)
-        elif part == 'I':
-            possibilities *= (24 ** len(qs))
-    if count > possibilities:
-        raise ValueError(f'Đề này chỉ tạo được {possibilities} cách trộn khác nhau.')
+
+    # Apply web group_settings if provided
+    if group_settings:
+        if isinstance(group_settings, str):
+            try:
+                group_settings = json.loads(group_settings)
+            except Exception:
+                group_settings = None
+        if isinstance(group_settings, list):
+            for item in group_settings:
+                if not isinstance(item, dict):
+                    continue
+                part = item.get('part')
+                idx = item.get('index')
+                matching_group = None
+                for g in exam.groups:
+                    if part and g.name == part:
+                        matching_group = g
+                        break
+                    if idx is not None and g.index == idx:
+                        matching_group = g
+                        break
+                if matching_group:
+                    if 'fixed_position' in item:
+                        matching_group.fixed_position = bool(item['fixed_position'])
+                    if 'mode' in item:
+                        matching_group.mode = int(item['mode'])
+                    exam.group_configs[matching_group.name] = {
+                        'fixed_position': matching_group.fixed_position,
+                        'mode': matching_group.mode
+                    }
+                    exam.freeze_map[matching_group.name] = (matching_group.mode in (0, 2))
+        elif isinstance(group_settings, dict):
+            for part, cfg in group_settings.items():
+                if not isinstance(cfg, dict):
+                    continue
+                for g in exam.groups:
+                    if g.name == part or str(g.index) == str(part):
+                        if 'fixed_position' in cfg:
+                            g.fixed_position = bool(cfg['fixed_position'])
+                        if 'mode' in cfg:
+                            g.mode = int(cfg['mode'])
+                        exam.group_configs[g.name] = {
+                            'fixed_position': g.fixed_position,
+                            'mode': g.mode
+                        }
+                        exam.freeze_map[g.name] = (g.mode in (0, 2))
+
     rng = random.Random(seed)
     variants, seen = [], set()
     while len(variants) < count:
-        order = {}
-        for part, q in exam.sections.items():
-            if not q:
-                continue
-            if exam.freeze_map.get(part, False):
-                group_qs = list(q)
+        if exam.subject == 'tieng_anh':
+            floating_indices = [i for i, g in enumerate(exam.groups) if not g.fixed_position]
+            if len(floating_indices) > 1:
+                shuffled_floating = rng.sample([exam.groups[i] for i in floating_indices], len(floating_indices))
+                ordered_groups = list(exam.groups)
+                for idx, g in zip(floating_indices, shuffled_floating):
+                    ordered_groups[idx] = g
             else:
-                group_qs = rng.sample(q, len(q))
-            shuffled = []
+                ordered_groups = list(exam.groups)
+        else:
+            ordered_groups = list(exam.groups)
+
+        order = {}
+        for g in ordered_groups:
+            part = g.name
+            qs = g.questions
+            if not qs:
+                continue
+
+            # Question order:
+            # Mode 1 or 3: shuffle questions
+            # Mode 0 or 2: keep question order
+            shuffle_qs = (g.mode in (1, 3)) if exam.subject == 'tieng_anh' else (not exam.freeze_map.get(part, False))
+            if shuffle_qs:
+                group_qs = rng.sample(qs, len(qs))
+            else:
+                group_qs = list(qs)
+
+            # Option order:
+            # Mode 2 or 3: shuffle options
+            # Mode 0 or 1: keep option order
+            shuffle_opts = (g.mode in (2, 3)) if exam.subject == 'tieng_anh' else exam._is_mcq_part(part)
+
+            final_qs = []
             for item in group_qs:
-                if exam._is_mcq_part(part) and len(item.options) == 4:
+                if shuffle_opts and len(item.options) == 4 and exam._is_mcq_part(part):
                     option_order = tuple(rng.sample(range(4), 4))
                     answer = 'ABCD'[option_order.index('ABCD'.index(item.answer))] if item.answer in 'ABCD' else item.answer
-                    shuffled.append(replace(item, answer=answer, option_order=option_order))
+                    final_qs.append(replace(item, answer=answer, option_order=option_order))
                 else:
-                    shuffled.append(deepcopy(item))
-            order[part] = shuffled
-        signature = tuple(tuple((q.number, q.option_order) for q in questions) for questions in order.values())
+                    final_qs.append(replace(item, option_order=(0, 1, 2, 3)))
+            order[part] = final_qs
+
+        signature = tuple(
+            (g.name, tuple((q.number, q.option_order) for q in order[g.name]))
+            for g in ordered_groups
+        )
         if signature in seen:
             continue
         seen.add(signature)
         variants.append((str(int(start_code) + len(variants)).zfill(len(start_code)), order))
-    output = BytesIO()
 
+    output = BytesIO()
     mapping = {}
     for code, order in variants:
         mapping[code] = {}
@@ -765,7 +945,7 @@ def export_shuffle(content, count=4, start_code='0101', include_solutions=True, 
                     'cau_goc': q.number,
                     'dap_an': q.answer,
                 }
-                if len(q.options) == 4 and exam._is_mcq_part(part):
+                if part == 'I' or (exam.subject == 'tieng_anh' and len(q.options) == 4):
                     item['phuong_an_moi_sang_goc'] = {new: 'ABCD'[old] for new, old in zip('ABCD', q.option_order)}
                 part_list.append(item)
             mapping[code][part] = part_list
@@ -780,15 +960,20 @@ def export_shuffle(content, count=4, start_code='0101', include_solutions=True, 
                 raise ValueError('Một lượt xuất vượt quá 4 MB. Hãy bỏ bản lời giải hoặc giảm dung lượng hình trong đề gốc.')
         archive.writestr('Dap_an_TNMaker_2025.xlsx', answer_workbook(variants))
         archive.writestr('Doi_chieu_cau_goc.json', json.dumps(mapping, ensure_ascii=False, indent=2))
-        
+
         if exam.subject == 'tieng_anh':
             guide_text = (
-                'ĐỀ THI TIẾNG ANH - TRỘN THEO NHÓM BÀI ĐỌC / LISTENING\n'
-                'Các câu hỏi được đánh số liên tục từ 1 đến hết đề.\n'
-                'Các phần điền khuyết (Cloze) và Nghe giữ nguyên thứ tự câu, chỉ đảo phương án A-D.\n'
-                'Các câu độc lập hoặc bài đọc hiểu đảo cả câu lẫn phương án A-D.\n'
-                'De_*.docx: bản học sinh. loi_giai-*.docx: bản giáo viên có đáp án gạch chân.\n'
-                'Dap_an_TNMaker_2025.xlsx: file đáp án nạp trực tiếp vào ứng dụng TNMaker.\n'
+                'HƯỚNG DẪN TRỘN ĐỀ MÔN TIẾNG ANH\n'
+                '• Đặt các <g> trước các phần trong đề (hoặc cấu hình trực tiếp trên web):\n'
+                '  - <g0>: Không trộn cả câu hỏi lẫn đáp án của Question.\n'
+                '  - <g1>: Chỉ hoán vị vị trí các Question, đáp án không đảo.\n'
+                '  - <g2>: Chỉ hoán vị vị trí các đáp án trong Question, giữ nguyên vị trí Question.\n'
+                '  - <g3>: Hoán vị cả câu hỏi lẫn đáp án trong phần đó.\n'
+                '• Thêm dấu # trước <g> (ví dụ: <#g0>, <#g1>, <#g2>, <#g3>) để giữ nguyên vị trí phần trong đề.\n'
+                '• Không có dấu # thì các phần sẽ được hoán vị vị trí với nhau khi tạo mã đề mới.\n'
+                '• Các câu hỏi được đánh số liên tục từ 1 đến hết đề.\n'
+                '• De_*.docx: bản học sinh. loi_giai-*.docx: bản giáo viên có đáp án gạch chân.\n'
+                '• Dap_an_TNMaker_2025.xlsx: file đáp án nạp trực tiếp vào ứng dụng TNMaker 2025.\n'
                 + ('\nLƯU Ý:\n' + '\n'.join(exam.warnings) if exam.warnings else '')
             )
         else:

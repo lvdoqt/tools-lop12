@@ -20,6 +20,7 @@ async function request(file, operation, settings = {}, signal) {
 export default function WordShufflePage() {
   const [file, setFile] = useState(null);
   const [subject, setSubject] = useState('toan');
+  const [groupConfigs, setGroupConfigs] = useState({});
   const [analysis, setAnalysis] = useState(null);
   const [count, setCount] = useState('4');
   const [startCode, setStartCode] = useState('0101');
@@ -38,7 +39,7 @@ export default function WordShufflePage() {
 
   function selectFile(event) {
     const selected = event.target.files?.[0];
-    setAnalysis(null); setResult(null); setError(''); setFile(null);
+    setAnalysis(null); setResult(null); setError(''); setFile(null); setGroupConfigs({});
     if (!selected) return;
     if (!selected.name.toLowerCase().endsWith('.docx') || selected.size > 4 * 1024 * 1024 || !selected.size) {
       setError('Chọn file .docx không rỗng, tối đa 4 MB. Với .doc, hãy mở Word và lưu thành .docx.');
@@ -49,10 +50,29 @@ export default function WordShufflePage() {
 
   async function analyze() {
     controller.current = new AbortController();
-    setBusy('analyze'); setError(''); setAnalysis(null); setResult(null);
-    try { setAnalysis(await (await request(file, 'analyze', { subject }, controller.current.signal)).json()); }
+    setBusy('analyze'); setError(''); setAnalysis(null); setResult(null); setGroupConfigs({});
+    try {
+      const data = await (await request(file, 'analyze', { subject }, controller.current.signal)).json();
+      setAnalysis(data);
+      const initialConfigs = {};
+      (data.sections || []).forEach(sec => {
+        initialConfigs[sec.part] = {
+          fixed_position: !!sec.fixed_position,
+          mode: sec.mode ?? 3,
+        };
+      });
+      setGroupConfigs(initialConfigs);
+    }
     catch (err) { if (err.name !== 'AbortError') setError(err.message); }
     finally { setBusy(''); }
+  }
+
+  function updateGroupConfig(part, key, value) {
+    setGroupConfigs(prev => ({
+      ...prev,
+      [part]: { ...prev[part], [key]: value }
+    }));
+    setResult(null);
   }
 
   async function generate() {
@@ -63,7 +83,17 @@ export default function WordShufflePage() {
       const files = {};
       const seed = crypto.randomUUID();
       for (let index = 0; index < Number(count); index++) {
-        const response = await request(file, 'export', { count, start_code: startCode, include_solutions: solutions, seed, variant_index: index, department, school, subject }, signal);
+        const response = await request(file, 'export', {
+          count,
+          start_code: startCode,
+          include_solutions: solutions,
+          seed,
+          variant_index: index,
+          department,
+          school,
+          subject,
+          group_settings: JSON.stringify(groupConfigs),
+        }, signal);
         const entries = unzipSync(new Uint8Array(await response.arrayBuffer()));
         for (const [name, data] of Object.entries(entries)) {
           if (!files[name]) files[name] = data;
@@ -128,8 +158,18 @@ export default function WordShufflePage() {
         <p>Phần II nhận nhãn ý đúng a/b/c/d được gạch chân, hoặc kết luận “a) ĐÚNG”, “b) SAI”… trong Lời giải (không phân biệt chữ hoa/thường). Nếu không gạch chân, hãy ghi đủ kết luận cho cả bốn ý.</p>
         <p>Phần III lấy số sau “Đáp án:”, “Đáp số:” hoặc “Trả lời:” dưới “Lời giải”. Chấp nhận dấu phẩy/chấm thập phân và bỏ dấu chấm kết câu: “Đáp số: 446.” → 446.</p>
       </> : <>
-        <p>Hỗ trợ đề Tiếng Anh theo nhóm bài đọc (Reading, Cloze điền khuyết, Listening, Sắp xếp câu...). Mỗi câu bắt đầu bằng “Question 1.” hoặc “Câu 1.”. Gạch chân nhãn đáp án đúng A/B/C/D.</p>
-        <p>Tự động giữ bài đọc/hội thoại đi liền trước nhóm câu hỏi. Các phần điền khuyết (Cloze) và Nghe sẽ giữ nguyên thứ tự câu để khớp với vị trí trong bài, chỉ đảo phương án A–D.</p>
+        <div className="shuffle-guide-card">
+          <strong>📌 Hướng dẫn tạo &amp; cấu hình đề Tiếng Anh để trộn:</strong>
+          <ul>
+            <li>Đặt mã <code>&lt;g&gt;</code> trước các phần trong đề hoặc <strong>tùy chỉnh trực tiếp trên web</strong> sau khi bấm &quot;Phân tích đề&quot;:</li>
+            <li><code>&lt;g0&gt;</code>: Không trộn cả câu hỏi lẫn đáp án của Question.</li>
+            <li><code>&lt;g1&gt;</code>: Chỉ hoán vị vị trí các Question, các đáp án trong Question không đảo.</li>
+            <li><code>&lt;g2&gt;</code>: Chỉ hoán vị vị trí các đáp án trong Question, giữ nguyên vị trí Question (chuẩn cho bài điền khuyết / nghe).</li>
+            <li><code>&lt;g3&gt;</code>: Hoán vị cả câu hỏi lẫn đáp án trong phần đó.</li>
+            <li>Thêm dấu <code>#</code> (ví dụ: <code>&lt;#g0&gt;</code>, <code>&lt;#g1&gt;</code>, <code>&lt;#g2&gt;</code>, <code>&lt;#g3&gt;</code>) để <strong>giữ nguyên vị trí của phần đó trong đề</strong>.</li>
+            <li>Nếu không có dấu <code>#</code>, vị trí các phần sẽ được hoán vị với nhau khi tạo mã đề mới.</li>
+          </ul>
+        </div>
       </>}
       <label className="pdf-upload-zone"><input aria-label="Chọn đề Word" type="file" accept=".docx" disabled={!!busy} onChange={selectFile} />
         <strong>{file ? file.name : 'Chọn đề Word (.docx)'}</strong><span>Tối đa 4 MB • Giữ nguyên Equation / MathType và hình nhúng</span>
@@ -141,20 +181,64 @@ export default function WordShufflePage() {
     {analysis && <>
       <section className="glass-panel shuffle-panel">
         <h2>Kết quả phân tích: {analysis.total} câu</h2>
-        <div className="shuffle-counts">{analysis.sections.map(section => <span key={section.part}>{section.part.startsWith('Nhóm') || section.part.startsWith('Phần') ? section.part : `Phần ${section.part}`}: <strong>{section.count} câu</strong>{section.freeze && <em style={{ fontSize: '0.85em', color: 'var(--text-muted, #666)', marginLeft: '4px' }}>(Cố định câu)</em>}</span>)}</div>
+        <div className="shuffle-counts">{analysis.sections.map(section => {
+          const cfg = groupConfigs[section.part] || { fixed_position: section.fixed_position, mode: section.mode ?? 3 };
+          return (
+            <span key={section.part}>
+              {section.part.startsWith('Nhóm') || section.part.startsWith('Phần') ? section.part : `Phần ${section.part}`}: <strong>{section.count} câu</strong>
+              <code style={{ marginLeft: '6px', fontSize: '0.88em', background: cfg.fixed_position ? '#dcfce7' : '#e0f2fe', color: cfg.fixed_position ? '#15803d' : '#0369a1', padding: '2px 6px', borderRadius: '4px' }}>
+                {`<${cfg.fixed_position ? '#' : ''}g${cfg.mode}>`}
+              </code>
+            </span>
+          );
+        })}</div>
         {!!analysis.errors.length && <div className="alert alert-error" role="alert"><div><strong>Cần sửa đề gốc trước khi trộn:</strong><ul>{analysis.errors.map((message, i) => <li key={i}>{message}</li>)}</ul></div></div>}
         {!!analysis.warnings.length && <div className="alert alert-info"><div>{analysis.warnings.map((message, i) => <p key={i}>{message}</p>)}</div></div>}
         <p className="tex-hint">Xem nhanh phần chữ và đáp án đã nhận diện. Công thức MathType và hình có thể không hiện trong phần xem nhanh, nhưng được giữ trong file Word xuất ra.</p>
-        {analysis.sections.map(section => <div className="shuffle-section" key={section.part}>
-          <h3>{section.part.startsWith('Nhóm') || section.part.startsWith('Phần') ? section.part : `Phần ${section.part}`}{section.freeze && <span style={{ fontSize: '0.8em', fontWeight: 'normal', color: 'var(--text-muted, #666)', marginLeft: '8px' }}>(Cố định thứ tự câu hỏi theo bài đọc)</span>}</h3>
-          {section.questions.map((question, index) => <details key={index} className="shuffle-question">
-            <summary><span>Câu {question.number}</span><strong className={question.errors.length ? 'shuffle-invalid' : 'shuffle-answer'}>{question.answer || 'Chưa xác định đáp án'}</strong></summary>
-            <p className="shuffle-text">{question.text}</p>
-            {!!question.options.length && <div className="shuffle-options">{question.options.map((option, i) => <span key={i} className={option.correct ? 'shuffle-answer' : ''}>{option.label}: {section.part === 'II' ? (option.correct ? 'Đúng' : 'Sai') : (option.correct ? 'Đáp án đúng ✓' : 'Không chọn')}</span>)}</div>}
-            {question.solution && <details><summary>Lời giải gốc</summary><p className="shuffle-text">{question.solution}</p></details>}
-            {question.errors.map((message, i) => <p key={i} className="shuffle-invalid">{message}</p>)}
-          </details>)}
-        </div>)}
+        {analysis.sections.map(section => {
+          const cfg = groupConfigs[section.part] || { fixed_position: section.fixed_position, mode: section.mode ?? 3 };
+          return (
+            <div className="shuffle-section" key={section.part}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                <h3>{section.part.startsWith('Nhóm') || section.part.startsWith('Phần') ? section.part : `Phần ${section.part}`}</h3>
+                <span className={`tag-badge ${cfg.fixed_position ? 'tag-fixed' : 'tag-floating'}`}>
+                  {`<${cfg.fixed_position ? '#' : ''}g${cfg.mode}>`}
+                </span>
+              </div>
+              <div className="group-config-box">
+                <label className="group-config-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={!!cfg.fixed_position}
+                    disabled={!!busy}
+                    onChange={e => updateGroupConfig(section.part, 'fixed_position', e.target.checked)}
+                  />
+                  <span>Giữ nguyên vị trí phần này trong đề (<code>#</code>)</span>
+                </label>
+                <label className="group-config-mode">
+                  <span>Quy tắc trộn:</span>
+                  <select
+                    value={cfg.mode}
+                    disabled={!!busy}
+                    onChange={e => updateGroupConfig(section.part, 'mode', Number(e.target.value))}
+                  >
+                    <option value={0}>&lt;g0&gt; : Không trộn cả câu hỏi lẫn đáp án</option>
+                    <option value={1}>&lt;g1&gt; : Chỉ hoán vị câu hỏi (giữ nguyên đáp án)</option>
+                    <option value={2}>&lt;g2&gt; : Chỉ hoán vị đáp án A–D (giữ nguyên thứ tự câu)</option>
+                    <option value={3}>&lt;g3&gt; : Hoán vị cả câu hỏi lẫn đáp án A–D</option>
+                  </select>
+                </label>
+              </div>
+              {section.questions.map((question, index) => <details key={index} className="shuffle-question">
+                <summary><span>Câu {question.number}</span><strong className={question.errors.length ? 'shuffle-invalid' : 'shuffle-answer'}>{question.answer || 'Chưa xác định đáp án'}</strong></summary>
+                <p className="shuffle-text">{question.text}</p>
+                {!!question.options.length && <div className="shuffle-options">{question.options.map((option, i) => <span key={i} className={option.correct ? 'shuffle-answer' : ''}>{option.label}: {section.part === 'II' ? (option.correct ? 'Đúng' : 'Sai') : (option.correct ? 'Đáp án đúng ✓' : 'Không chọn')}</span>)}</div>}
+                {question.solution && <details><summary>Lời giải gốc</summary><p className="shuffle-text">{question.solution}</p></details>}
+                {question.errors.map((message, i) => <p key={i} className="shuffle-invalid">{message}</p>)}
+              </details>)}
+            </div>
+          );
+        })}
       </section>
       <section className="glass-panel shuffle-panel">
         <h2>2. Tạo mã đề</h2>
@@ -172,7 +256,11 @@ export default function WordShufflePage() {
           <label>Mã đề bắt đầu<input type="text" inputMode="numeric" maxLength={4} value={startCode} disabled={!!busy} onChange={e => { setStartCode(e.target.value); setResult(null); }} /></label>
         </div>
         <label className="shuffle-checkbox"><input type="checkbox" checked={solutions} disabled={!!busy} onChange={e => { setSolutions(e.target.checked); setResult(null); }} /> Kèm bản giáo viên có đáp án đánh dấu và lời giải</label>
-        <p>Trộn câu trong cùng phần và trộn phương án A–D ở Phần I, cập nhật đáp án tương ứng. Phần II giữ thứ tự ý a–d. Mỗi phần được đánh lại số câu từ 1.</p>
+        {subject === 'tieng_anh' ? (
+          <p>Trộn theo cấu hình từng phần (&lt;g0&gt;–&lt;g3&gt; và dấu # cố định vị trí), hoán vị các phần không có #. Tự động đánh lại số câu liên tục từ 1.</p>
+        ) : (
+          <p>Trộn câu trong cùng phần và trộn phương án A–D ở Phần I, cập nhật đáp án tương ứng. Phần II giữ thứ tự ý a–d. Mỗi phần được đánh lại số câu từ 1.</p>
+        )}
         <p>ZIP gồm đề học sinh, bản giáo viên nếu chọn, Excel đáp án TNmaker 2025 và bảng đối chiếu câu gốc. Bản học sinh bỏ dấu đáp án và lời giải.</p>
         <p className="tex-hint">Từ 1–50 mã đề; mã gồm 3–4 chữ số. Các mã đề được tạo lần lượt và gộp thành một ZIP. Giữ trang mở cho đến khi hoàn tất.</p>
         {!validSettings && <p className="shuffle-invalid">Điền tên Sở/Trường; kiểm tra số đề (1–50) và mã đề (3–4 chữ số, mã cuối không quá 9999).</p>}

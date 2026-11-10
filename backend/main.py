@@ -349,10 +349,11 @@ async def word_shuffle_export(file: UploadFile = File(...), count: int = Form(4,
                               variant_index: int | None = Form(None, ge=0, le=49),
                               department: str = Form('SỞ GDĐT ................................', min_length=1, max_length=120),
                               school: str = Form('TRƯỜNG THPT ........................', min_length=1, max_length=120),
-                              subject: str = Form('toan')):
+                              subject: str = Form('toan'),
+                              group_settings: str | None = Form(None)):
     content = await read_shuffle_upload(file)
     try:
-        output = await run_in_threadpool(export_shuffle, content, count, start_code, include_solutions, seed, variant_index, department, school, subject)
+        output = await run_in_threadpool(export_shuffle, content, count, start_code, include_solutions, seed, variant_index, department, school, subject, group_settings)
         return Response(output, media_type='application/zip', headers={
             'Content-Disposition': 'attachment; filename="Tron-de-Word.zip"', 'Cache-Control': 'no-store',
         })
