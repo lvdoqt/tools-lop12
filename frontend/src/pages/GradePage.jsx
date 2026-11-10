@@ -19,7 +19,13 @@ import {
   CloudUpload,
   CloudDownload,
   Edit2,
-  Check
+  Check,
+  User,
+  UserCheck,
+  LogOut,
+  Users,
+  GraduationCap,
+  Filter,
 } from 'lucide-react';
 import { api } from '../api';
 import {
@@ -30,14 +36,28 @@ import {
 } from '../lib/omrDetector';
 import './GradePage.css';
 
+const STORAGE_TEACHERS_KEY = 'grade_teachers_v2';
+const STORAGE_CURRENT_TEACHER_ID_KEY = 'grade_current_teacher_id_v2';
 const STORAGE_EXAMS_KEY = 'grade_exams_list_v2';
 const STORAGE_CURRENT_EXAM_ID_KEY = 'grade_current_exam_id_v2';
+
+const DEFAULT_TEACHER = {
+  id: 'gv_demo_01',
+  name: 'Thầy Nguyễn Văn Nam',
+  code: 'namnv',
+  subject: 'Toán học',
+  school: 'THPT',
+  classes: ['12A1', '12A2', '12A3'],
+  createdAt: '2026-09-01T00:00:00.000Z',
+};
 
 const DEFAULT_EXAM = {
   id: 'default-exam',
   title: 'Toán 12 — Kiểm tra trắc nghiệm 2025',
   sheet_type: '2025_math',
-  config: { maxP1: 12, maxP2: 4, maxP3: 6 },
+  teacher_id: 'gv_demo_01',
+  teacher_name: 'Thầy Nguyễn Văn Nam',
+  config: { maxP1: 12, maxP2: 4, maxP3: 6, teacher_id: 'gv_demo_01', teacher_name: 'Thầy Nguyễn Văn Nam' },
   answer_keys: {},
   submissions: [],
   updated_at: new Date().toISOString(),
@@ -45,6 +65,70 @@ const DEFAULT_EXAM = {
 
 export default function GradePage() {
   const [activeTab, setActiveTab] = useState('scan');
+
+  // Teacher Management State
+  const [teachers, setTeachers] = useState(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_TEACHERS_KEY);
+      if (saved) {
+        const list = JSON.parse(saved);
+        if (Array.isArray(list) && list.length > 0) return list;
+      }
+    } catch {}
+    return [DEFAULT_TEACHER];
+  });
+
+  const [currentTeacherId, setCurrentTeacherId] = useState(() => {
+    try {
+      const savedId = localStorage.getItem(STORAGE_CURRENT_TEACHER_ID_KEY);
+      if (savedId) return savedId;
+    } catch {}
+    return DEFAULT_TEACHER.id;
+  });
+
+  const currentTeacher = useMemo(() => {
+    return teachers.find(t => t.id === currentTeacherId) || teachers[0] || null;
+  }, [teachers, currentTeacherId]);
+
+  // Persist teachers
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_TEACHERS_KEY, JSON.stringify(teachers));
+      if (currentTeacherId) {
+        localStorage.setItem(STORAGE_CURRENT_TEACHER_ID_KEY, currentTeacherId);
+      }
+    } catch (e) {
+      console.warn('Could not save teachers to localStorage:', e);
+    }
+  }, [teachers, currentTeacherId]);
+
+  // Classes of current teacher
+  const teacherClasses = useMemo(() => {
+    return currentTeacher?.classes && currentTeacher.classes.length > 0
+      ? currentTeacher.classes
+      : ['12A1', '12A2', '12A3'];
+  }, [currentTeacher]);
+
+  const [selectedClass, setSelectedClass] = useState(() => teacherClasses[0] || '12A1');
+
+  useEffect(() => {
+    if (!teacherClasses.includes(selectedClass)) {
+      setSelectedClass(teacherClasses[0] || '12A1');
+    }
+  }, [teacherClasses, selectedClass]);
+
+  // Teacher Modals state
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authTab, setAuthTab] = useState('login'); // 'login' | 'register'
+  const [isClassManagerOpen, setIsClassManagerOpen] = useState(false);
+  const [newClassInput, setNewClassInput] = useState('');
+
+  // Register Form State
+  const [regName, setRegName] = useState('');
+  const [regCode, setRegCode] = useState('');
+  const [regSubject, setRegSubject] = useState('Toán học');
+  const [regSchool, setRegSchool] = useState('');
+  const [regClasses, setRegClasses] = useState('12A1, 12A2, 12A3');
 
   // Exams List Management
   const [exams, setExams] = useState(() => {
@@ -60,6 +144,25 @@ export default function GradePage() {
     return [DEFAULT_EXAM];
   });
 
+  // Filter exams by current teacher
+  const teacherExams = useMemo(() => {
+    if (!currentTeacher) return exams;
+    const list = exams.filter(e => !e.teacher_id || e.teacher_id === currentTeacher.id);
+    return list.length > 0 ? list : [
+      {
+        id: `exam_${currentTeacher.id}_default`,
+        title: `${currentTeacher.subject || 'Toán'} — Kiểm tra trắc nghiệm 2025`,
+        sheet_type: '2025_math',
+        teacher_id: currentTeacher.id,
+        teacher_name: currentTeacher.name,
+        config: { maxP1: 12, maxP2: 4, maxP3: 6, teacher_id: currentTeacher.id, teacher_name: currentTeacher.name },
+        answer_keys: {},
+        submissions: [],
+        updated_at: new Date().toISOString(),
+      }
+    ];
+  }, [exams, currentTeacher]);
+
   const [currentExamId, setCurrentExamId] = useState(() => {
     try {
       const savedId = localStorage.getItem(STORAGE_CURRENT_EXAM_ID_KEY);
@@ -72,8 +175,14 @@ export default function GradePage() {
 
   // Current active exam object
   const currentExam = useMemo(() => {
-    return exams.find(e => e.id === currentExamId) || exams[0] || DEFAULT_EXAM;
-  }, [exams, currentExamId]);
+    return teacherExams.find(e => e.id === currentExamId) || teacherExams[0] || DEFAULT_EXAM;
+  }, [teacherExams, currentExamId]);
+
+  useEffect(() => {
+    if (!teacherExams.some(e => e.id === currentExamId)) {
+      setCurrentExamId(teacherExams[0]?.id || DEFAULT_EXAM.id);
+    }
+  }, [teacherExams, currentExamId]);
 
   // Quick edit title state
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -81,6 +190,9 @@ export default function GradePage() {
 
   // Cloud sync status message
   const [cloudStatus, setCloudStatus] = useState(null);
+
+  // Class filter in Gradebook tab
+  const [classFilter, setClassFilter] = useState('all');
 
   // Save exams list to localStorage
   useEffect(() => {
@@ -97,22 +209,139 @@ export default function GradePage() {
     setExams(prev => prev.map(e => {
       if (e.id === currentExam.id) {
         const updated = typeof updater === 'function' ? updater(e) : { ...e, ...updater };
-        return { ...updated, updated_at: new Date().toISOString() };
+        return {
+          ...updated,
+          teacher_id: currentTeacher?.id || updated.teacher_id,
+          teacher_name: currentTeacher?.name || updated.teacher_name,
+          updated_at: new Date().toISOString()
+        };
       }
       return e;
     }));
   };
 
+  // Teacher Actions
+  const handleLoginTeacher = (targetId) => {
+    const t = teachers.find(item => item.id === targetId);
+    if (!t) return;
+    setCurrentTeacherId(t.id);
+    setSelectedClass(t.classes?.[0] || '12A1');
+    setClassFilter('all');
+    setIsAuthModalOpen(false);
+  };
+
+  const handleRegisterTeacher = (e) => {
+    if (e) e.preventDefault();
+    if (!regName.trim()) {
+      alert('Vui lòng nhập Họ và tên giáo viên.');
+      return;
+    }
+    const classList = regClasses
+      .split(',')
+      .map(c => c.trim().toUpperCase())
+      .filter(Boolean);
+    const finalClasses = classList.length > 0 ? classList : ['12A1', '12A2'];
+
+    const newT = {
+      id: 'gv_' + Date.now().toString(36),
+      name: regName.trim(),
+      code: regCode.trim() || regName.trim().toLowerCase().replace(/\s+/g, ''),
+      subject: regSubject.trim() || 'Toán học',
+      school: regSchool.trim(),
+      classes: finalClasses,
+      createdAt: new Date().toISOString(),
+    };
+
+    setTeachers(prev => [newT, ...prev]);
+    setCurrentTeacherId(newT.id);
+    setSelectedClass(finalClasses[0]);
+    setClassFilter('all');
+    setIsAuthModalOpen(false);
+
+    const starterExam = {
+      id: 'exam_' + Date.now(),
+      title: `${newT.subject} — Kiểm tra 2025`,
+      sheet_type: '2025_math',
+      teacher_id: newT.id,
+      teacher_name: newT.name,
+      config: { maxP1: 12, maxP2: 4, maxP3: 6, teacher_id: newT.id, teacher_name: newT.name },
+      answer_keys: {},
+      submissions: [],
+      updated_at: new Date().toISOString(),
+    };
+    setExams(prev => [starterExam, ...prev]);
+    setCurrentExamId(starterExam.id);
+
+    setRegName('');
+    setRegCode('');
+    setRegSchool('');
+  };
+
+  const handleAddClass = (className) => {
+    const clean = className.trim().toUpperCase();
+    if (!clean) return;
+    if (teacherClasses.includes(clean)) {
+      alert(`Lớp ${clean} đã có trong danh sách.`);
+      return;
+    }
+    const updated = [...teacherClasses, clean];
+    setTeachers(prev => prev.map(t => {
+      if (t.id === currentTeacher.id) {
+        return { ...t, classes: updated };
+      }
+      return t;
+    }));
+    setSelectedClass(clean);
+  };
+
+  const handleDeleteClass = (className) => {
+    if (teacherClasses.length <= 1) {
+      alert('Phải giữ lại ít nhất 1 lớp trong danh sách.');
+      return;
+    }
+    const subCount = (currentExam.submissions || []).filter(s => (s.class_name || '12A1') === className).length;
+    let msg = `Bạn có chắc muốn xóa Lớp ${className}?`;
+    if (subCount > 0) {
+      msg += `\nLưu ý: Đang có ${subCount} bài thi thuộc lớp này.`;
+    }
+    if (confirm(msg)) {
+      const updated = teacherClasses.filter(c => c !== className);
+      setTeachers(prev => prev.map(t => {
+        if (t.id === currentTeacher.id) {
+          return { ...t, classes: updated };
+        }
+        return t;
+      }));
+      if (selectedClass === className) {
+        setSelectedClass(updated[0]);
+      }
+    }
+  };
+
+  const handleUpdateSubmissionClass = (subId, newClassName) => {
+    updateCurrentExam(e => ({
+      ...e,
+      submissions: (e.submissions || []).map(s => {
+        if (s.id === subId) {
+          return { ...s, class_name: newClassName };
+        }
+        return s;
+      }),
+    }));
+  };
+
   // Create New Exam
   const handleCreateNewExam = () => {
-    const title = prompt('Nhập tên kỳ thi / bài kiểm tra mới:', `Bài kiểm tra ${exams.length + 1}`);
+    const title = prompt('Nhập tên kỳ thi / bài kiểm tra mới:', `Bài kiểm tra ${teacherExams.length + 1}`);
     if (!title || !title.trim()) return;
 
     const newExam = {
       id: 'exam_' + Date.now(),
       title: title.trim(),
       sheet_type: '2025_math',
-      config: { maxP1: 12, maxP2: 4, maxP3: 6 },
+      teacher_id: currentTeacher?.id,
+      teacher_name: currentTeacher?.name,
+      config: { maxP1: 12, maxP2: 4, maxP3: 6, teacher_id: currentTeacher?.id, teacher_name: currentTeacher?.name },
       answer_keys: {},
       submissions: [],
       updated_at: new Date().toISOString(),
@@ -125,14 +354,15 @@ export default function GradePage() {
 
   // Delete Current Exam
   const handleDeleteCurrentExam = () => {
-    if (exams.length <= 1) {
-      alert('Phải giữ lại ít nhất 1 kỳ thi trong hệ thống.');
+    if (teacherExams.length <= 1) {
+      alert('Phải giữ lại ít nhất 1 kỳ thi trong hệ thống của thầy/cô.');
       return;
     }
     if (confirm(`Bạn có chắc muốn xóa kỳ thi "${currentExam.title}" và toàn bộ dữ liệu bài chấm của nó?`)) {
       const remaining = exams.filter(e => e.id !== currentExam.id);
       setExams(remaining);
-      setCurrentExamId(remaining[0].id);
+      const remainingTeacher = remaining.filter(e => !e.teacher_id || e.teacher_id === currentTeacher.id);
+      setCurrentExamId(remainingTeacher[0]?.id || remaining[0]?.id);
     }
   };
 
@@ -144,12 +374,18 @@ export default function GradePage() {
         id: currentExam.id.startsWith('exam_') ? undefined : currentExam.id,
         title: currentExam.title,
         sheet_type: currentExam.sheet_type,
-        config: currentExam.config,
+        teacher_id: currentTeacher?.id,
+        teacher_name: currentTeacher?.name,
+        config: {
+          ...currentExam.config,
+          teacher_id: currentTeacher?.id,
+          teacher_name: currentTeacher?.name,
+        },
         answer_keys: currentExam.answer_keys,
         submissions: currentExam.submissions,
       });
       if (res.exam && res.exam.id) {
-        updateCurrentExam({ id: res.exam.id });
+        updateCurrentExam({ id: res.exam.id, teacher_id: currentTeacher?.id, teacher_name: currentTeacher?.name });
       }
       setCloudStatus('✓ Đã đồng bộ lên Supabase Cloud thành công!');
       setTimeout(() => setCloudStatus(null), 4000);
@@ -162,9 +398,9 @@ export default function GradePage() {
   const handleLoadFromCloud = async () => {
     try {
       setCloudStatus('Đang tải danh sách từ Supabase…');
-      const cloudExams = await api.listExamsCloud();
+      const cloudExams = await api.listExamsCloud(currentTeacher?.id);
       if (!cloudExams || cloudExams.length === 0) {
-        alert('Chưa có kỳ thi nào được lưu trên Supabase Cloud.');
+        alert(`Chưa có kỳ thi nào của giáo viên "${currentTeacher?.name}" trên Supabase Cloud.`);
         setCloudStatus(null);
         return;
       }
@@ -173,11 +409,13 @@ export default function GradePage() {
       setExams(prev => {
         const merged = [...prev];
         cloudExams.forEach(ce => {
-          const idx = merged.findIndex(m => m.id === ce.id || m.title === ce.title);
+          const idx = merged.findIndex(m => m.id === ce.id || (m.title === ce.title && (m.teacher_id === ce.teacher_id || !m.teacher_id)));
           const normalized = {
             id: ce.id,
             title: ce.title,
             sheet_type: ce.sheet_type || '2025_math',
+            teacher_id: ce.teacher_id || ce.config?.teacher_id || currentTeacher?.id,
+            teacher_name: ce.teacher_name || ce.config?.teacher_name || currentTeacher?.name,
             config: ce.config || { maxP1: 12, maxP2: 4, maxP3: 6 },
             answer_keys: ce.answer_keys || {},
             submissions: ce.submissions || [],
@@ -189,7 +427,7 @@ export default function GradePage() {
         return merged;
       });
 
-      setCloudStatus(`✓ Đã đồng bộ ${cloudExams.length} kỳ thi từ Supabase Cloud!`);
+      setCloudStatus(`✓ Đã đồng bộ ${cloudExams.length} kỳ thi của Thầy/Cô từ Supabase Cloud!`);
       setTimeout(() => setCloudStatus(null), 4000);
     } catch (err) {
       setCloudStatus(`⚠️ ${err.message}`);
@@ -434,6 +672,9 @@ export default function GradePage() {
           timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
           sbd: res.sbd || 'Chưa rõ',
           exam_code: res.exam_code || 'Chưa rõ',
+          class_name: selectedClass || '12A1',
+          teacher_id: currentTeacher?.id,
+          teacher_name: currentTeacher?.name,
           grading: res.grading,
           uncertain_questions: res.uncertain_questions || [],
           annotated_image: res.annotated_image,
@@ -569,6 +810,9 @@ export default function GradePage() {
       timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
       sbd: currentResult.sbd || 'Chưa rõ',
       exam_code: currentResult.exam_code || 'Chưa rõ',
+      class_name: selectedClass || '12A1',
+      teacher_id: currentTeacher?.id,
+      teacher_name: currentTeacher?.name,
       grading: currentResult.grading,
       uncertain_questions: currentResult.uncertain_questions || [],
       annotated_image: currentResult.annotated_image,
@@ -609,19 +853,35 @@ export default function GradePage() {
     }
   };
 
-  // Export Gradebook to Excel
-  const handleExportGradebook = async () => {
+  // Export Gradebook to Excel (supports exporting by class or all classes)
+  const handleExportGradebook = async (targetClassName = null) => {
     const subs = currentExam.submissions || [];
     if (subs.length === 0) {
       alert('Chưa có bài chấm nào trong danh sách.');
       return;
     }
+
+    const filteredSubs = targetClassName && targetClassName !== 'all'
+      ? subs.filter(s => (s.class_name || '12A1') === targetClassName)
+      : subs;
+
+    if (filteredSubs.length === 0) {
+      alert(`Chưa có bài chấm nào của lớp ${targetClassName}.`);
+      return;
+    }
+
     try {
       setIsProcessing(true);
-      const url = await api.exportGradeExcel(currentExam.title, subs);
+      const url = await api.exportGradeExcel(
+        currentExam.title,
+        filteredSubs,
+        currentTeacher?.name || 'Giáo viên',
+        targetClassName === 'all' ? null : targetClassName
+      );
       const link = document.createElement('a');
       link.href = url;
-      link.download = `Bang_diem_${currentExam.title.replace(/\s+/g, '_')}.xlsx`;
+      const classSuffix = targetClassName && targetClassName !== 'all' ? `_Lop_${targetClassName}` : '';
+      link.download = `Bang_diem_${currentExam.title.replace(/\s+/g, '_')}${classSuffix}.xlsx`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -708,19 +968,24 @@ export default function GradePage() {
     );
   }, [currentExam.config, examCodes]);
 
-  // Statistics
+  // Statistics calculated for current class filter
   const submissions = currentExam.submissions || [];
+  const filteredSubmissions = useMemo(() => {
+    if (classFilter === 'all') return submissions;
+    return submissions.filter(s => (s.class_name || '12A1') === classFilter);
+  }, [submissions, classFilter]);
+
   const stats = useMemo(() => {
-    if (submissions.length === 0) return { total: 0, avg: 0, max: 0, min: 0 };
-    const scores = submissions.map(s => s.grading?.total_score || 0);
+    if (filteredSubmissions.length === 0) return { total: 0, avg: 0, max: 0, min: 0 };
+    const scores = filteredSubmissions.map(s => s.grading?.total_score || 0);
     const sum = scores.reduce((a, b) => a + b, 0);
     return {
-      total: submissions.length,
-      avg: (sum / submissions.length).toFixed(2),
+      total: filteredSubmissions.length,
+      avg: (sum / filteredSubmissions.length).toFixed(2),
       max: Math.max(...scores).toFixed(2),
       min: Math.min(...scores).toFixed(2),
     };
-  }, [submissions]);
+  }, [filteredSubmissions]);
 
   return (
     <main className="main-content">
@@ -750,7 +1015,70 @@ export default function GradePage() {
         </header>
 
         {/* ======================================================== */}
-        {/* EXAM / KT SELECTOR BAR (QUẢN LÝ NHIỀU KỲ THI) */}
+        {/* TEACHER PROFILE BAR */}
+        {/* ======================================================== */}
+        <div className="teacher-profile-bar">
+          <div className="teacher-info-group">
+            <div className="teacher-avatar">
+              <UserCheck size={22} />
+            </div>
+            <div className="teacher-text">
+              <div className="teacher-name-row">
+                <span className="teacher-role-tag">Giáo viên:</span>
+                <strong className="teacher-name">{currentTeacher?.name || 'Chưa đăng nhập'}</strong>
+                <span className="teacher-subject-tag">{currentTeacher?.subject || 'Toán học'}</span>
+                {currentTeacher?.school && (
+                  <span className="teacher-school-tag">({currentTeacher.school})</span>
+                )}
+              </div>
+              <div className="teacher-classes-row">
+                <span className="classes-label"><GraduationCap size={15} /> Lớp của GV:</span>
+                <div className="teacher-classes-pills">
+                  {teacherClasses.map(c => {
+                    const count = submissions.filter(s => (s.class_name || '12A1') === c).length;
+                    return (
+                      <span
+                        key={c}
+                        className={`class-chip ${selectedClass === c ? 'active-chip' : ''}`}
+                        onClick={() => setSelectedClass(c)}
+                        title={`Bấm để chọn chấm nhanh cho Lớp ${c} (${count} bài)`}
+                      >
+                        Lớp {c} ({count})
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="teacher-actions">
+            <button
+              type="button"
+              className="btn-secondary teacher-btn-manage-class"
+              onClick={() => setIsClassManagerOpen(true)}
+              title="Thêm, xóa danh sách lớp phụ trách"
+            >
+              <Users size={16} />
+              Quản lý Lớp ({teacherClasses.length})
+            </button>
+            <button
+              type="button"
+              className="btn-secondary teacher-btn-switch"
+              onClick={() => {
+                setAuthTab('login');
+                setIsAuthModalOpen(true);
+              }}
+              title="Đổi giáo viên hoặc đăng ký tài khoản khác"
+            >
+              <LogOut size={16} />
+              Đổi giáo viên
+            </button>
+          </div>
+        </div>
+
+        {/* ======================================================== */}
+        {/* EXAM / KT SELECTOR BAR (QUẢN LÝ NHIỀU KỲ THI CỦA GIÁO VIÊN) */}
         {/* ======================================================== */}
         <div className="exam-selector-bar">
           <div className="exam-select-group">
@@ -790,7 +1118,7 @@ export default function GradePage() {
                 value={currentExamId}
                 onChange={e => setCurrentExamId(e.target.value)}
               >
-                {exams.map(ex => (
+                {teacherExams.map(ex => (
                   <option key={ex.id} value={ex.id}>
                     {ex.title} ({ex.submissions?.length || 0} bài)
                   </option>
@@ -842,7 +1170,7 @@ export default function GradePage() {
               Đồng bộ Cloud
             </button>
 
-            {exams.length > 1 && (
+            {teacherExams.length > 1 && (
               <button
                 className="btn-danger"
                 onClick={handleDeleteCurrentExam}
@@ -900,6 +1228,52 @@ export default function GradePage() {
         {/* ======================================================== */}
         {activeTab === 'scan' && (
           <div className="scanner-container">
+            {/* Thanh chọn lớp đang chấm của giáo viên */}
+            <div className="class-scanner-bar">
+              <div className="class-scanner-left">
+                <span className="class-scanner-label">
+                  <GraduationCap size={18} color="#0284c7" />
+                  <strong>Lớp đang chấm:</strong>
+                </span>
+                <select
+                  className="class-scanner-select"
+                  value={selectedClass}
+                  onChange={e => setSelectedClass(e.target.value)}
+                >
+                  {teacherClasses.map(c => {
+                    const count = submissions.filter(s => (s.class_name || '12A1') === c).length;
+                    return (
+                      <option key={c} value={c}>
+                        Lớp {c} ({count} bài đã chấm)
+                      </option>
+                    );
+                  })}
+                </select>
+                <button
+                  type="button"
+                  className="btn-quick-add-class"
+                  onClick={() => {
+                    const val = prompt('Nhập tên lớp mới (VD: 12A4, 11B2...):');
+                    if (val && val.trim()) {
+                      handleAddClass(val.trim());
+                    }
+                  }}
+                  title="Thêm nhanh một lớp mới"
+                >
+                  <Plus size={14} /> Thêm lớp
+                </button>
+              </div>
+
+              <div className="class-scanner-badges">
+                <span className="class-badge-item class-badge-active">
+                  Lớp <strong>{selectedClass}</strong>: <strong>{submissions.filter(s => (s.class_name || '12A1') === selectedClass).length}</strong> bài
+                </span>
+                <span className="class-badge-item class-badge-total">
+                  Tổng kỳ thi: <strong>{submissions.length}</strong> bài
+                </span>
+              </div>
+            </div>
+
             {/* Viewport or Current Result */}
             {!currentResult ? (
               <div className="viewport-card">
@@ -1164,7 +1538,7 @@ export default function GradePage() {
                       </div>
                       <div className="quick-result-info">
                         <div className="quick-result-title">
-                          <strong>SBD:</strong> {lastQuickResult.sbd} • <strong>Mã đề:</strong> {lastQuickResult.exam_code}
+                          <strong>SBD:</strong> {lastQuickResult.sbd} • <strong>Mã đề:</strong> {lastQuickResult.exam_code} • <span className="badge-result-class">Lớp {lastQuickResult.class_name || selectedClass}</span>
                         </div>
                         <div className="quick-result-stats">
                           {currentExam.config.maxP2 === 0 && currentExam.config.maxP3 === 0 ? (
@@ -1220,6 +1594,23 @@ export default function GradePage() {
                     <div className="id-chip-label">Mã đề thi</div>
                     <div className="id-chip-value">{currentResult.exam_code || 'Chưa rõ'}</div>
                   </div>
+                </div>
+
+                {/* Chọn lớp gán bài thi khi chấm thủ công */}
+                <div className="manual-review-class-bar">
+                  <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#334155', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <GraduationCap size={16} color="#0284c7" /> Gán vào Lớp:
+                  </span>
+                  <select
+                    className="inline-class-select"
+                    style={{ fontSize: '0.9rem', padding: '0.35rem 0.65rem' }}
+                    value={selectedClass}
+                    onChange={e => setSelectedClass(e.target.value)}
+                  >
+                    {teacherClasses.map(c => (
+                      <option key={c} value={c}>Lớp {c}</option>
+                    ))}
+                  </select>
                 </div>
 
                 {/* Score Breakdown */}
@@ -1399,11 +1790,42 @@ export default function GradePage() {
         {/* ======================================================== */}
         {activeTab === 'gradebook' && (
           <div className="gradebook-card">
+            {/* Thanh bộ lọc theo Lớp */}
+            <div className="gradebook-class-filter-bar">
+              <span className="class-filter-label">
+                <Filter size={16} color="#0284c7" /> Lọc theo lớp:
+              </span>
+              <div className="class-filter-pills">
+                <button
+                  type="button"
+                  className={`class-filter-pill ${classFilter === 'all' ? 'active' : ''}`}
+                  onClick={() => setClassFilter('all')}
+                >
+                  Tất cả các lớp ({submissions.length})
+                </button>
+                {teacherClasses.map(c => {
+                  const count = submissions.filter(s => (s.class_name || '12A1') === c).length;
+                  return (
+                    <button
+                      key={c}
+                      type="button"
+                      className={`class-filter-pill ${classFilter === c ? 'active' : ''}`}
+                      onClick={() => setClassFilter(c)}
+                    >
+                      Lớp {c} ({count})
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* Stats Bar */}
             <div className="gradebook-stats">
               <div className="stat-box">
                 <div className="stat-val">{stats.total}</div>
-                <div className="stat-lbl">Tổng bài đã chấm</div>
+                <div className="stat-lbl">
+                  {classFilter === 'all' ? 'Tổng bài đã chấm' : `Bài chấm Lớp ${classFilter}`}
+                </div>
               </div>
               <div className="stat-box">
                 <div className="stat-val">{stats.avg}</div>
@@ -1423,17 +1845,47 @@ export default function GradePage() {
             <div className="gradebook-actions-bar">
               <div style={{ fontWeight: 700, color: '#0f172a', fontSize: '1.05rem' }}>
                 Kỳ thi: {currentExam.title}
+                {classFilter !== 'all' && (
+                  <span style={{ color: '#0284c7', marginLeft: '0.5rem', fontWeight: 600 }}>
+                    (Đang lọc Lớp {classFilter}: {filteredSubmissions.length} bài)
+                  </span>
+                )}
               </div>
 
               <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                <button
-                  className="btn-primary"
-                  onClick={handleExportGradebook}
-                  disabled={submissions.length === 0 || isProcessing}
-                >
-                  <Download size={16} />
-                  Xuất Excel bảng điểm
-                </button>
+                {classFilter !== 'all' ? (
+                  <>
+                    <button
+                      className="btn-primary"
+                      onClick={() => handleExportGradebook(classFilter)}
+                      disabled={filteredSubmissions.length === 0 || isProcessing}
+                      title={`Xuất riêng bảng điểm cho Lớp ${classFilter}`}
+                    >
+                      <Download size={16} />
+                      Xuất Excel Lớp {classFilter} ({filteredSubmissions.length})
+                    </button>
+                    <button
+                      className="btn-secondary"
+                      onClick={() => handleExportGradebook('all')}
+                      disabled={submissions.length === 0 || isProcessing}
+                      title="Xuất bảng điểm tất cả các lớp của giáo viên này"
+                    >
+                      <Download size={16} />
+                      Xuất tất cả ({submissions.length})
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    className="btn-primary"
+                    onClick={() => handleExportGradebook('all')}
+                    disabled={submissions.length === 0 || isProcessing}
+                    title="Xuất bảng điểm tất cả các lớp (tách từng Sheet theo Lớp)"
+                  >
+                    <Download size={16} />
+                    Xuất Excel bảng điểm ({submissions.length} bài)
+                  </button>
+                )}
+
                 {submissions.length > 0 && (
                   <button className="btn-danger" onClick={handleClearAllSubmissions}>
                     <Trash2 size={16} />
@@ -1444,10 +1896,14 @@ export default function GradePage() {
             </div>
 
             {/* Submissions Table */}
-            {submissions.length === 0 ? (
+            {filteredSubmissions.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '3rem 1rem', color: '#94a3b8' }}>
                 <FileSpreadsheet size={48} style={{ margin: '0 auto 1rem', opacity: 0.4 }} />
-                <p>Chưa có bài chấm nào cho kỳ thi này. Hãy chuyển sang tab <strong>Quét chấm bài</strong> để bắt đầu chấm.</p>
+                <p>
+                  {classFilter === 'all'
+                    ? 'Chưa có bài chấm nào cho kỳ thi này. Hãy chuyển sang tab Quét chấm bài để bắt đầu chấm.'
+                    : `Chưa có bài chấm nào của Lớp ${classFilter}. Hãy chọn lớp này trong tab Quét chấm bài để chấm tiếp.`}
+                </p>
               </div>
             ) : (
               <div className="grade-table-wrap">
@@ -1455,6 +1911,7 @@ export default function GradePage() {
                   <thead>
                     <tr>
                       <th>STT</th>
+                      <th>Lớp</th>
                       <th>Giờ chấm</th>
                       <th>Số báo danh</th>
                       <th>Mã đề</th>
@@ -1466,9 +1923,21 @@ export default function GradePage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {submissions.map((sub, idx) => (
+                    {filteredSubmissions.map((sub, idx) => (
                       <tr key={sub.id} className={sub.uncertain_questions?.length > 0 ? 'has-warning' : ''}>
                         <td>{idx + 1}</td>
+                        <td>
+                          <select
+                            className="inline-class-select"
+                            value={sub.class_name || '12A1'}
+                            onChange={e => handleUpdateSubmissionClass(sub.id, e.target.value)}
+                            title="Bấm để đổi lớp cho bài thi này"
+                          >
+                            {teacherClasses.map(c => (
+                              <option key={c} value={c}>{c}</option>
+                            ))}
+                          </select>
+                        </td>
                         <td>{sub.timestamp}</td>
                         <td style={{ fontWeight: 700, fontFamily: 'monospace' }}>{sub.sbd}</td>
                         <td style={{ fontFamily: 'monospace' }}>{sub.exam_code}</td>
@@ -1787,6 +2256,273 @@ export default function GradePage() {
                   )}
                 </>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* ======================================================== */}
+        {/* MODAL 1: TEACHER LOGIN / REGISTER */}
+        {/* ======================================================== */}
+        {isAuthModalOpen && (
+          <div
+            className="grade-modal-overlay"
+            onClick={() => currentTeacher && setIsAuthModalOpen(false)}
+          >
+            <div className="grade-modal-card" onClick={e => e.stopPropagation()}>
+              <div className="grade-modal-header">
+                <div className="grade-modal-title">
+                  <UserCheck size={22} color="#0284c7" />
+                  <h3>Đăng nhập Giáo viên chấm thi</h3>
+                </div>
+                {currentTeacher && (
+                  <button
+                    type="button"
+                    className="btn-modal-close"
+                    onClick={() => setIsAuthModalOpen(false)}
+                    title="Đóng"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              <p className="grade-modal-desc">
+                Đăng nhập tài khoản giáo viên để lưu và quản lý kết quả chấm thi theo từng lớp của thầy/cô, dễ dàng xuất bảng điểm Excel và đồng bộ đám mây.
+              </p>
+
+              {/* Tab Switch: Chọn Giáo viên vs Thêm mới */}
+              <div className="auth-tab-switch">
+                <button
+                  type="button"
+                  className={`auth-tab-btn ${authTab === 'login' ? 'active' : ''}`}
+                  onClick={() => setAuthTab('login')}
+                >
+                  <User size={16} /> Chọn giáo viên ({teachers.length})
+                </button>
+                <button
+                  type="button"
+                  className={`auth-tab-btn ${authTab === 'register' ? 'active' : ''}`}
+                  onClick={() => setAuthTab('register')}
+                >
+                  <Plus size={16} /> Thêm Giáo viên mới
+                </button>
+              </div>
+
+              {authTab === 'login' && (
+                <div className="auth-body">
+                  <label className="auth-form-label">Chọn tài khoản giáo viên của thầy/cô:</label>
+                  <div className="teacher-picker-list">
+                    {teachers.map(t => (
+                      <div
+                        key={t.id}
+                        className={`teacher-picker-card ${currentTeacherId === t.id ? 'selected' : ''}`}
+                        onClick={() => handleLoginTeacher(t.id)}
+                      >
+                        <div className="teacher-picker-avatar">
+                          <User size={18} />
+                        </div>
+                        <div className="teacher-picker-info">
+                          <strong>{t.name}</strong>
+                          <div className="teacher-picker-sub">
+                            <span>Môn: {t.subject || 'Toán'}</span> • <span>Lớp: {t.classes?.join(', ')}</span>
+                            {t.school ? ` • ${t.school}` : ''}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="btn-select-teacher"
+                          onClick={e => {
+                            e.stopPropagation();
+                            handleLoginTeacher(t.id);
+                          }}
+                        >
+                          Vào chấm thi →
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="auth-divider"><span>hoặc</span></div>
+
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => setAuthTab('register')}
+                    style={{ width: '100%', justifyContent: 'center' }}
+                  >
+                    <Plus size={16} /> Đăng ký thêm Giáo viên khác
+                  </button>
+                </div>
+              )}
+
+              {authTab === 'register' && (
+                <form className="auth-body" onSubmit={handleRegisterTeacher}>
+                  <div className="auth-field">
+                    <label className="auth-form-label">Họ và tên giáo viên: *</label>
+                    <input
+                      type="text"
+                      placeholder="VD: Thầy Nguyễn Văn Nam hoặc Cô Trần Thị Mai"
+                      value={regName}
+                      onChange={e => setRegName(e.target.value)}
+                      required
+                      className="auth-input"
+                      autoFocus
+                    />
+                  </div>
+
+                  <div className="auth-form-row">
+                    <div className="auth-field" style={{ flex: 1 }}>
+                      <label className="auth-form-label">Môn giảng dạy:</label>
+                      <input
+                        type="text"
+                        placeholder="VD: Toán học, Vật lí..."
+                        value={regSubject}
+                        onChange={e => setRegSubject(e.target.value)}
+                        className="auth-input"
+                      />
+                    </div>
+                    <div className="auth-field" style={{ flex: 1 }}>
+                      <label className="auth-form-label">Trường / Đơn vị:</label>
+                      <input
+                        type="text"
+                        placeholder="VD: THPT Chuyên..."
+                        value={regSchool}
+                        onChange={e => setRegSchool(e.target.value)}
+                        className="auth-input"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="auth-field">
+                    <label className="auth-form-label">
+                      Các lớp phụ trách giảng dạy (phân cách bằng dấu phẩy): *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="VD: 12A1, 12A2, 12A3, 11B1"
+                      value={regClasses}
+                      onChange={e => setRegClasses(e.target.value)}
+                      required
+                      className="auth-input"
+                    />
+                    <span className="auth-help-text">
+                      💡 Bài chấm sau khi quét sẽ được tự động lưu theo từng lớp này.
+                    </span>
+                  </div>
+
+                  <div className="auth-actions">
+                    <button type="submit" className="btn-primary" style={{ flex: 1, justifyContent: 'center' }}>
+                      <Check size={16} /> Lưu & Bắt đầu chấm thi
+                    </button>
+                    {currentTeacher && (
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => setIsAuthModalOpen(false)}
+                      >
+                        Hủy
+                      </button>
+                    )}
+                  </div>
+                </form>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ======================================================== */}
+        {/* MODAL 2: CLASS MANAGEMENT */}
+        {/* ======================================================== */}
+        {isClassManagerOpen && (
+          <div
+            className="grade-modal-overlay"
+            onClick={() => setIsClassManagerOpen(false)}
+          >
+            <div className="grade-modal-card" onClick={e => e.stopPropagation()}>
+              <div className="grade-modal-header">
+                <div className="grade-modal-title">
+                  <Users size={22} color="#0284c7" />
+                  <h3>Quản lý danh sách lớp — {currentTeacher?.name}</h3>
+                </div>
+                <button
+                  type="button"
+                  className="btn-modal-close"
+                  onClick={() => setIsClassManagerOpen(false)}
+                  title="Đóng"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <p className="grade-modal-desc">
+                Thêm hoặc xóa các lớp giảng dạy. Bài chấm của học sinh sẽ được lưu trữ phân loại theo từng lớp này.
+              </p>
+
+              {/* Form thêm lớp mới */}
+              <form
+                className="class-add-form"
+                onSubmit={e => {
+                  e.preventDefault();
+                  if (newClassInput.trim()) {
+                    handleAddClass(newClassInput.trim());
+                    setNewClassInput('');
+                  }
+                }}
+              >
+                <input
+                  type="text"
+                  className="auth-input"
+                  placeholder="Nhập tên lớp mới (VD: 12A4, 11B2...)"
+                  value={newClassInput}
+                  onChange={e => setNewClassInput(e.target.value)}
+                />
+                <button type="submit" className="btn-primary" style={{ whiteSpace: 'nowrap' }}>
+                  <Plus size={16} /> Thêm lớp
+                </button>
+              </form>
+
+              {/* Danh sách lớp hiện tại */}
+              <div className="class-manager-list">
+                <label className="auth-form-label">
+                  Danh sách lớp hiện có ({teacherClasses.length} lớp):
+                </label>
+                {teacherClasses.map(c => {
+                  const count = submissions.filter(s => (s.class_name || '12A1') === c).length;
+                  return (
+                    <div key={c} className="class-manager-item">
+                      <div className="class-manager-item-left">
+                        <GraduationCap size={18} color="#0284c7" />
+                        <strong>Lớp {c}</strong>
+                        <span className="class-manager-sub-count">
+                          {count > 0 ? `(${count} bài thi đã chấm)` : '(Chưa có bài chấm)'}
+                        </span>
+                      </div>
+                      <div className="class-manager-item-actions">
+                        <button
+                          type="button"
+                          className="btn-danger"
+                          style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem' }}
+                          onClick={() => handleDeleteClass(c)}
+                          disabled={teacherClasses.length <= 1}
+                          title="Xóa lớp này"
+                        >
+                          <Trash2 size={14} /> Xóa
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div style={{ marginTop: '1.25rem', display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => setIsClassManagerOpen(false)}
+                >
+                  Hoàn tất & Đóng
+                </button>
+              </div>
             </div>
           </div>
         )}

@@ -19,6 +19,7 @@ async function request(file, operation, settings = {}, signal) {
 
 export default function WordShufflePage() {
   const [file, setFile] = useState(null);
+  const [subject, setSubject] = useState('toan');
   const [analysis, setAnalysis] = useState(null);
   const [count, setCount] = useState('4');
   const [startCode, setStartCode] = useState('0101');
@@ -49,7 +50,7 @@ export default function WordShufflePage() {
   async function analyze() {
     controller.current = new AbortController();
     setBusy('analyze'); setError(''); setAnalysis(null); setResult(null);
-    try { setAnalysis(await (await request(file, 'analyze', {}, controller.current.signal)).json()); }
+    try { setAnalysis(await (await request(file, 'analyze', { subject }, controller.current.signal)).json()); }
     catch (err) { if (err.name !== 'AbortError') setError(err.message); }
     finally { setBusy(''); }
   }
@@ -62,7 +63,7 @@ export default function WordShufflePage() {
       const files = {};
       const seed = crypto.randomUUID();
       for (let index = 0; index < Number(count); index++) {
-        const response = await request(file, 'export', { count, start_code: startCode, include_solutions: solutions, seed, variant_index: index, department, school }, signal);
+        const response = await request(file, 'export', { count, start_code: startCode, include_solutions: solutions, seed, variant_index: index, department, school, subject }, signal);
         const entries = unzipSync(new Uint8Array(await response.arrayBuffer()));
         for (const [name, data] of Object.entries(entries)) {
           if (!files[name]) files[name] = data;
@@ -101,9 +102,25 @@ export default function WordShufflePage() {
     </div>
     <section className="glass-panel shuffle-panel">
       <h2>1. Đọc đề gốc</h2>
-      <p>Đề gồm PHẦN I, II, III; mỗi câu bắt đầu bằng “Câu 1.” hoặc “Câu 1:”, có thể in đậm. Phần I gạch chân nhãn đáp án đúng A/B/C/D.</p>
-      <p>Phần II nhận nhãn ý đúng a/b/c/d được gạch chân, hoặc kết luận “a) ĐÚNG”, “b) SAI”… trong Lời giải (không phân biệt chữ hoa/thường). Nếu không gạch chân, hãy ghi đủ kết luận cho cả bốn ý.</p>
-      <p>Phần III lấy số sau “Đáp án:”, “Đáp số:” hoặc “Trả lời:” dưới “Lời giải”. Chấp nhận dấu phẩy/chấm thập phân và bỏ dấu chấm kết câu: “Đáp số: 446.” → 446.</p>
+      <div className="shuffle-subject-tabs">
+        <button
+          className={`btn ${subject === 'toan' ? 'btn-primary' : 'btn-secondary'}`}
+          onClick={() => { setSubject('toan'); setAnalysis(null); setResult(null); setFile(null); }}
+          disabled={!!busy}
+        >📐 Môn Toán</button>
+        <button
+          className={`btn ${subject === 'tieng_anh' ? 'btn-primary' : 'btn-secondary'}`}
+          onClick={() => { setSubject('tieng_anh'); setAnalysis(null); setResult(null); setFile(null); }}
+          disabled={!!busy}
+        >🔤 Môn Tiếng Anh</button>
+      </div>
+      {subject === 'toan' ? <>
+        <p>Đề có thể gồm một hoặc nhiều trong ba phần PHẦN I, PHẦN II, PHẦN III. Mỗi câu bắt đầu bằng “Câu 1.” hoặc “Câu 1:”, có thể in đậm. Phần I gạch chân nhãn đáp án đúng A/B/C/D.</p>
+        <p>Phần II nhận nhãn ý đúng a/b/c/d được gạch chân, hoặc kết luận “a) ĐÚNG”, “b) SAI”… trong Lời giải (không phân biệt chữ hoa/thường). Nếu không gạch chân, hãy ghi đủ kết luận cho cả bốn ý.</p>
+        <p>Phần III lấy số sau “Đáp án:”, “Đáp số:” hoặc “Trả lời:” dưới “Lời giải”. Chấp nhận dấu phẩy/chấm thập phân và bỏ dấu chấm kết câu: “Đáp số: 446.” → 446.</p>
+      </> : <>
+        <p>Đề Tiếng Anh chỉ có câu trắc nghiệm (A/B/C/D). Có thể gồm một hoặc nhiều PHẦN I, PHẦN II, PHẦN III. Mỗi câu bắt đầu bằng “Câu 1.” hoặc “Câu 1:”, gạch chân đáp án đúng A/B/C/D.</p>
+      </>}
       <label className="pdf-upload-zone"><input aria-label="Chọn đề Word" type="file" accept=".docx" disabled={!!busy} onChange={selectFile} />
         <strong>{file ? file.name : 'Chọn đề Word (.docx)'}</strong><span>Tối đa 4 MB • Giữ nguyên Equation / MathType và hình nhúng</span>
       </label>
@@ -137,7 +154,7 @@ export default function WordShufflePage() {
         </div>
         <div className="shuffle-heading-preview" aria-label="Xem trước đầu đề">
           <div><span>{department}</span><strong>{school}</strong></div>
-          <div><strong>ĐỀ THI THỬ TN THPT 2027</strong><strong>MÔN: TOÁN</strong><em>Thời gian làm bài: 90 phút</em></div>
+          <div><strong>ĐỀ THI THỬ TN THPT 2027</strong><strong>{subject === 'tieng_anh' ? 'MÔN: TIẾNG ANH' : 'MÔN: TOÁN'}</strong><em>{subject === 'tieng_anh' ? 'Thời gian làm bài: 60 phút' : 'Thời gian làm bài: 90 phút'}</em></div>
           <b>Mã đề: {startCode}</b>
         </div>
         <div className="shuffle-settings">

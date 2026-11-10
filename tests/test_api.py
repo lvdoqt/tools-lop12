@@ -199,9 +199,12 @@ class ApiTests(unittest.TestCase):
     def test_grade_export_excel(self):
         payload = {
             "exam_title": "Toan 12 Thu Nghiem",
+            "teacher_name": "Thay Nguyen Van Nam",
+            "class_name": "12A1",
             "submissions": [
                 {
                     "sbd": "01234567",
+                    "class_name": "12A1",
                     "exam_code": "101",
                     "grading": {
                         "part1_score": 3.0,
@@ -216,6 +219,29 @@ class ApiTests(unittest.TestCase):
         response = self.client.post("/api/grade/export-excel", json=payload)
         self.assertEqual(response.status_code, 200)
         self.assertIn("Bang_diem_cham_thi_2025.xlsx", response.headers["Content-Disposition"])
+        self.assertTrue(len(response.content) > 1000)
+
+    def test_grade_export_excel_multi_classes(self):
+        payload = {
+            "exam_title": "Kiem tra 1 tiet",
+            "teacher_name": "Co Tran Thi Mai",
+            "submissions": [
+                {
+                    "sbd": "123456",
+                    "class_name": "12A1",
+                    "exam_code": "101",
+                    "grading": {"part1_score": 3.0, "part2_score": 4.0, "part3_score": 3.0, "total_score": 10.0},
+                },
+                {
+                    "sbd": "654321",
+                    "class_name": "12A2",
+                    "exam_code": "102",
+                    "grading": {"part1_score": 2.5, "part2_score": 3.0, "part3_score": 2.0, "total_score": 7.5},
+                }
+            ]
+        }
+        response = self.client.post("/api/grade/export-excel", json=payload)
+        self.assertEqual(response.status_code, 200)
         self.assertTrue(len(response.content) > 1000)
 
     def test_grade_sample_excel(self):

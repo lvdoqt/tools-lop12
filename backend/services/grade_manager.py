@@ -217,18 +217,15 @@ def generate_sample_answer_template(
     return out.getvalue()
 
 
-def export_gradebook_excel(
+def _populate_grade_sheet(
+    ws,
     exam_title: str,
     submissions: List[Dict[str, Any]],
-) -> bytes:
-    """
-    Export graded submissions into a clean, formatted Excel file (Bang_diem.xlsx).
-    """
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Bảng Điểm"
-
-    font_title = Font(name="Arial", size=14, bold=True, color="1B365D")
+    teacher_name: Optional[str] = None,
+    class_name: Optional[str] = None,
+):
+    font_title = Font(name="Arial", size=13, bold=True, color="1B365D")
+    font_subinfo = Font(name="Arial", size=10, italic=True, color="475569")
     font_header = Font(name="Arial", size=10, bold=True, color="FFFFFF")
     font_data = Font(name="Arial", size=10)
     font_bold = Font(name="Arial", size=10, bold=True)
@@ -248,32 +245,52 @@ def export_gradebook_excel(
     align_left = Alignment(horizontal='left', vertical='center')
     align_right = Alignment(horizontal='right', vertical='center')
 
-    ws.merge_cells("A1:H1")
+    # Row 1: Title
+    ws.merge_cells("A1:I1")
     ws["A1"] = f"BẢNG ĐIỂM CHẤM TRẮC NGHIỆM - {exam_title.upper() if exam_title else 'KỲ THI 2025'}"
     ws["A1"].font = font_title
     ws["A1"].alignment = align_center
-    ws.row_dimensions[1].height = 35
+    ws.row_dimensions[1].height = 32
 
+    # Row 2: Sub-info (Teacher, Class, Total count)
+    info_parts = []
+    if teacher_name:
+        info_parts.append(f"Giáo viên chấm: {teacher_name}")
+    info_parts.append(f"Lớp: {class_name if class_name else 'Tất cả các lớp'}")
+    info_parts.append(f"Sĩ số đã chấm: {len(submissions)} bài")
+
+    ws.merge_cells("A2:I2")
+    ws["A2"] = "   |   ".join(info_parts)
+    ws["A2"].font = font_subinfo
+    ws["A2"].alignment = align_center
+    ws.row_dimensions[2].height = 20
+
+    # Row 4: Column Headers
     headers = [
-        "STT", "Số báo danh", "Mã đề",
+        "STT", "Lớp", "Số báo danh", "Mã đề",
         "Điểm Phần I", "Điểm Phần II", "Điểm Phần III",
         "Tổng điểm", "Ghi chú"
     ]
     ws.append([])
     ws.append(headers)
-    ws.row_dimensions[3].height = 26
+    ws.row_dimensions[4].height = 26
 
     for col_num in range(1, len(headers) + 1):
-        cell = ws.cell(row=3, column=col_num)
+        cell = ws.cell(row=4, column=col_num)
         cell.font = font_header
         cell.fill = fill_header
         cell.alignment = align_center
         cell.border = thin_border
 
-    sorted_subs = sorted(submissions, key=lambda s: str(s.get('sbd', '')))
+    # Sort: class_name then sbd
+    sorted_subs = sorted(
+        submissions,
+        key=lambda s: (str(s.get('class_name', '')), str(s.get('sbd', '')))
+    )
 
-    row_idx = 4
+    row_idx = 5
     for idx, sub in enumerate(sorted_subs, 1):
+        c_name = sub.get('class_name', '') or ''
         sbd = sub.get('sbd', '')
         exam_code = sub.get('exam_code', '')
         grading = sub.get('grading', {})
@@ -285,19 +302,19 @@ def export_gradebook_excel(
         note = f"Nghi ngờ: {', '.join(uncertain)}" if uncertain else ""
 
         ws.append([
-            idx, sbd, exam_code,
+            idx, c_name, sbd, exam_code,
             p1, p2, p3, total, note
         ])
         ws.row_dimensions[row_idx].height = 20
 
         is_even = (idx % 2 == 0)
-        for col_num in range(1, 9):
+        for col_num in range(1, 10):
             c = ws.cell(row=row_idx, column=col_num)
-            c.font = font_bold if col_num == 7 else font_data
+            c.font = font_bold if col_num == 8 else font_data
             c.border = thin_border
-            if col_num in [1, 2, 3]:
+            if col_num in [1, 2, 3, 4]:
                 c.alignment = align_center
-            elif col_num in [4, 5, 6, 7]:
+            elif col_num in [5, 6, 7, 8]:
                 c.alignment = align_right
                 c.number_format = '0.00'
             else:
@@ -310,9 +327,54 @@ def export_gradebook_excel(
 
         row_idx += 1
 
-    col_widths = [8, 16, 12, 14, 14, 14, 14, 25]
+    col_widths = [7, 12, 16, 12, 14, 14, 14, 14, 25]
     for col_idx, width in enumerate(col_widths, 1):
         ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = width
+
+
+def export_gradebook_excel(
+    exam_title: str,
+    submissions: List[Dict[str, Any]],
+    teacher_name: Optional[str] = None,
+    class_name: Optional[str] = None,
+) -> bytes:
+    """
+    Export graded submissions into a clean, formatted Excel file (Bang_diem.xlsx).
+    Supports filtering by class, including teacher name, and creating separate tabs per class.
+    """
+    wb = openpyxl.Workbook()
+
+    if class_name:
+        # Filter submissions for specific class only
+        target_subs = [
+            s for s in submissions
+            if str(s.get('class_name', '')).strip().lower() == str(class_name).strip().lower()
+        ]
+        ws = wb.active
+        ws.title = f"Lớp {class_name}"[:31]
+        _populate_grade_sheet(ws, exam_title, target_subs, teacher_name, class_name)
+    else:
+        # All classes
+        ws_all = wb.active
+        ws_all.title = "Tổng hợp"
+        _populate_grade_sheet(ws_all, exam_title, submissions, teacher_name, "Tất cả các lớp")
+
+        # Check if there are distinct classes
+        distinct_classes = sorted(list({
+            str(s.get('class_name', '')).strip()
+            for s in submissions
+            if str(s.get('class_name', '')).strip()
+        }))
+
+        if len(distinct_classes) > 1:
+            for c_name in distinct_classes:
+                class_subs = [
+                    s for s in submissions
+                    if str(s.get('class_name', '')).strip() == c_name
+                ]
+                safe_title = f"Lớp {c_name}"[:31]
+                ws_class = wb.create_sheet(title=safe_title)
+                _populate_grade_sheet(ws_class, exam_title, class_subs, teacher_name, c_name)
 
     out = BytesIO()
     wb.save(out)
@@ -323,8 +385,8 @@ def export_gradebook_excel(
 # Supabase Cloud Sync Functions
 # ==============================================================
 
-def list_exams_supabase() -> List[Dict[str, Any]]:
-    """List all saved exams from Supabase table grade_exams."""
+def list_exams_supabase(teacher_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    """List all saved exams from Supabase table grade_exams, optionally filtered by teacher_id."""
     url, key = get_supabase_config()
     if not url or not key:
         return []
@@ -337,7 +399,17 @@ def list_exams_supabase() -> List[Dict[str, Any]]:
             timeout=10
         )
         if r.status_code == 200:
-            return r.json()
+            exams = r.json()
+            if teacher_id:
+                filtered = []
+                for ex in exams:
+                    cfg = ex.get('config') or {}
+                    ex_tid = ex.get('teacher_id') or cfg.get('teacher_id')
+                    # Include if teacher matches, or if exam is unassigned/public
+                    if not ex_tid or ex_tid == teacher_id:
+                        filtered.append(ex)
+                return filtered
+            return exams
         return []
     except Exception:
         return []
@@ -356,10 +428,18 @@ def save_exam_supabase(exam_data: Dict[str, Any]) -> Dict[str, Any]:
         'Prefer': 'return=representation,resolution=merge-duplicates'
     }
 
+    config = dict(exam_data.get('config') or {'maxP1': 12, 'maxP2': 4, 'maxP3': 6})
+    teacher_id = exam_data.get('teacher_id') or config.get('teacher_id')
+    teacher_name = exam_data.get('teacher_name') or config.get('teacher_name')
+    if teacher_id:
+        config['teacher_id'] = teacher_id
+    if teacher_name:
+        config['teacher_name'] = teacher_name
+
     body = {
         'title': exam_data.get('title', 'Kỳ thi mới'),
         'sheet_type': exam_data.get('sheet_type', '2025_math'),
-        'config': exam_data.get('config', {'maxP1': 12, 'maxP2': 4, 'maxP3': 6}),
+        'config': config,
         'answer_keys': exam_data.get('answer_keys', {}),
         'submissions': exam_data.get('submissions', []),
         'updated_at': 'now()',
@@ -367,16 +447,31 @@ def save_exam_supabase(exam_data: Dict[str, Any]) -> Dict[str, Any]:
     if exam_data.get('id'):
         body['id'] = exam_data['id']
 
+    body_with_cols = dict(body)
+    if teacher_id:
+        body_with_cols['teacher_id'] = teacher_id
+    if teacher_name:
+        body_with_cols['teacher_name'] = teacher_name
+
     r = requests.post(
         f'{url}/rest/v1/grade_exams',
         headers=headers,
-        json=body,
+        json=body_with_cols,
         timeout=15
     )
     if not r.ok:
-        if r.status_code == 404:
-            raise ValueError("Bảng `grade_exams` chưa được tạo trên Supabase. Vui lòng chạy file `supabase/grade_exams.sql` trong SQL Editor của Supabase.")
-        raise ValueError(f"Không thể lưu lên Supabase (mã {r.status_code}): {r.text[:200]}")
+        # If columns teacher_id or teacher_name don't exist in Supabase schema yet, retry without them
+        if 'column' in r.text.lower() or r.status_code == 400:
+            r = requests.post(
+                f'{url}/rest/v1/grade_exams',
+                headers=headers,
+                json=body,
+                timeout=15
+            )
+        if not r.ok:
+            if r.status_code == 404:
+                raise ValueError("Bảng `grade_exams` chưa được tạo trên Supabase. Vui lòng chạy file `supabase/grade_exams.sql` trong SQL Editor của Supabase.")
+            raise ValueError(f"Không thể lưu lên Supabase (mã {r.status_code}): {r.text[:200]}")
 
     res = r.json()
     return res[0] if isinstance(res, list) and len(res) > 0 else res

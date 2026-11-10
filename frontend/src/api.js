@@ -137,12 +137,14 @@ export const api = {
     return res.json();
   },
 
-  exportGradeExcel: async (examTitle, submissions) => {
+  exportGradeExcel: async (examTitle, submissions, teacherName = null, className = null) => {
     const res = await fetch(`${API_BASE}/grade/export-excel`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         exam_title: examTitle,
+        teacher_name: teacherName,
+        class_name: className,
         submissions,
       }),
     });
@@ -163,8 +165,9 @@ export const api = {
   getSampleExcelUrl: (maxP1 = 12, maxP2 = 4, maxP3 = 6, codes = '101,102,103,104') =>
     `${API_BASE}/grade/sample-excel?max_p1=${maxP1}&max_p2=${maxP2}&max_p3=${maxP3}&codes=${encodeURIComponent(codes)}`,
 
-  listExamsCloud: async () => {
-    const res = await fetch(`${API_BASE}/grade/exams`);
+  listExamsCloud: async (teacherId = null) => {
+    const query = teacherId ? `?teacher_id=${encodeURIComponent(teacherId)}` : '';
+    const res = await fetch(`${API_BASE}/grade/exams${query}`);
     if (!res.ok) return [];
     const data = await res.json().catch(() => ({}));
     return data.exams || [];

@@ -330,10 +330,10 @@ async def read_shuffle_upload(file: UploadFile):
 
 
 @app.post('/api/word-shuffle/analyze')
-async def word_shuffle_analyze(file: UploadFile = File(...)):
+async def word_shuffle_analyze(file: UploadFile = File(...), subject: str = Form('toan')):
     content = await read_shuffle_upload(file)
     try:
-        result = await run_in_threadpool(lambda: Exam(content).summary())
+        result = await run_in_threadpool(lambda: Exam(content, subject=subject).summary())
         response = JSONResponse(result, headers={'Cache-Control': 'no-store'})
         check_output_size(len(response.body))
         return response
@@ -348,10 +348,11 @@ async def word_shuffle_export(file: UploadFile = File(...), count: int = Form(4,
                               seed: str | None = Form(None, max_length=80),
                               variant_index: int | None = Form(None, ge=0, le=49),
                               department: str = Form('SỞ GDĐT ................................', min_length=1, max_length=120),
-                              school: str = Form('TRƯỜNG THPT ........................', min_length=1, max_length=120)):
+                              school: str = Form('TRƯỜNG THPT ........................', min_length=1, max_length=120),
+                              subject: str = Form('toan')):
     content = await read_shuffle_upload(file)
     try:
-        output = await run_in_threadpool(export_shuffle, content, count, start_code, include_solutions, seed, variant_index, department, school)
+        output = await run_in_threadpool(export_shuffle, content, count, start_code, include_solutions, seed, variant_index, department, school, subject)
         return Response(output, media_type='application/zip', headers={
             'Content-Disposition': 'attachment; filename="Tron-de-Word.zip"', 'Cache-Control': 'no-store',
         })
@@ -567,6 +568,8 @@ class ScanRequest(BaseModel):
 
 class ExportExcelRequest(BaseModel):
     exam_title: str = "Thi thử 2025"
+    teacher_name: Optional[str] = None
+    class_name: Optional[str] = None
     submissions: List[Dict[str, Any]]
 
 
@@ -637,6 +640,8 @@ async def export_excel_gradebook(request: ExportExcelRequest):
             export_gradebook_excel,
             request.exam_title,
             request.submissions,
+            teacher_name=request.teacher_name,
+            class_name=request.class_name,
         )
         return Response(
             excel_bytes,
@@ -711,9 +716,9 @@ async def get_sample_answer_excel(
 
 
 @app.get("/api/grade/exams")
-async def get_exams():
+async def get_exams(teacher_id: Optional[str] = Query(None)):
     try:
-        exams = await run_in_threadpool(list_exams_supabase)
+        exams = await run_in_threadpool(list_exams_supabase, teacher_id=teacher_id)
         return JSONResponse({"success": True, "exams": exams})
     except Exception as exc:
         logger.exception("Error listing exams from Supabase")
@@ -724,6 +729,8 @@ class ExamSaveRequest(BaseModel):
     id: Optional[str] = None
     title: str = Field(..., min_length=1, max_length=200)
     sheet_type: str = "2025_math"
+    teacher_id: Optional[str] = None
+    teacher_name: Optional[str] = None
     config: Dict[str, Any] = Field(default_factory=dict)
     answer_keys: Dict[str, Any] = Field(default_factory=dict)
     submissions: List[Dict[str, Any]] = Field(default_factory=list)
@@ -741,6 +748,7 @@ async def post_exam(request: ExamSaveRequest):
         raise HTTPException(400, str(val_err))
     except Exception as exc:
         logger.exception("Error saving exam to Supabase")
+        raise HTTPException(500, f"Lỗi lưu kỳ thi lên Supabase: {str(exc)}")
         raise HTTPException(500, f"Lỗi lưu kỳ thi lên Supabase: {str(exc)}")
 
 

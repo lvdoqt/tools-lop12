@@ -72,7 +72,8 @@ class Question:
 
 
 class Exam:
-    def __init__(self, content):
+    def __init__(self, content, subject='toan'):
+        self.subject = subject
         try:
             with zipfile.ZipFile(BytesIO(content)) as archive:
                 entries = archive.infolist()
@@ -133,9 +134,15 @@ class Exam:
                 self.prefix.append(block)
             if block.tag == tag('tbl') and any(QUESTION.match(text_map(p)[0]) for p in paragraphs([block])):
                 raise ValueError('Câu hỏi nằm trong bảng chưa được hỗ trợ. Hãy đưa nhãn Câu n ra ngoài bảng; bảng trong nội dung vẫn được giữ.')
-        if seen != ['I', 'II', 'III']:
-            raise ValueError('Cần đủ ba tiêu đề PHẦN I, PHẦN II, PHẦN III theo đúng thứ tự.')
+        if not seen:
+            raise ValueError('Không tìm thấy tiêu đề PHẦN nào. Mỗi phần bắt đầu bằng "PHẦN I", "PHẦN II" hoặc "PHẦN III".')
+        order_map = {'I': 0, 'II': 1, 'III': 2}
+        if [order_map[s] for s in seen] != sorted(order_map[s] for s in seen):
+            raise ValueError('Các tiêu đề PHẦN phải xuất hiện theo đúng thứ tự I, II, III.')
+        self.seen = seen
         for section, questions in self.sections.items():
+            if section not in self.seen:
+                continue
             if not questions:
                 self.errors.append(f'Phần {section} chưa có câu hỏi.')
             numbers = [q.number for q in questions]
@@ -180,7 +187,7 @@ class Exam:
         return False
 
     def read_answer(self, section, question):
-        if section == 'III':
+        if section == 'III' and self.subject != 'tieng_anh':
             matches = [SHORT.fullmatch(text_map(p)[0]) for p in paragraphs(question.solution)]
             answers = [m[1].replace('−', '-').replace('.', ',').lstrip('+') for m in matches if m]
             if len(answers) != 1:
@@ -188,7 +195,7 @@ class Exam:
             else:
                 question.answer = answers[0]
             return
-        pattern = re.compile(r'(?<!\S)([ABCD])\s*[.)]' if section == 'I' else r'(?<!\S)([abcd])\s*\)')
+        pattern = re.compile(r'(?<!\S)([ABCD])\s*[.)]' if (section == 'I' or self.subject == 'tieng_anh') else r'(?<!\S)([abcd])\s*\)')
         for paragraph in paragraphs(question.blocks):
             value, owners = text_map(paragraph)
             matches = list(pattern.finditer(value))
@@ -197,10 +204,10 @@ class Exam:
                     'label': match[1], 'correct': self.underlined(owners[match.start(1)]),
                     'text': value[match.end():matches[i + 1].start() if i + 1 < len(matches) else len(value)].strip(),
                 })
-        expected = list('ABCD' if section == 'I' else 'abcd')
+        expected = list('ABCD' if (section == 'I' or self.subject == 'tieng_anh') else 'abcd')
         if [o['label'] for o in question.options] != expected:
             question.errors.append('Không tách được đủ bốn nhãn ' + ', '.join(expected) + ' theo thứ tự.')
-        elif section == 'I':
+        elif section == 'I' or self.subject == 'tieng_anh':
             correct = [o['label'] for o in question.options if o['correct']]
             if len(correct) != 1:
                 question.errors.append('Cần gạch chân đúng một nhãn A/B/C/D của phương án đúng.')
@@ -232,7 +239,11 @@ class Exam:
                 'sections': [{'part': part, 'count': len(questions), 'questions': [
                     {'number': q.number, 'text': plain(q.blocks), 'answer': q.answer,
                      'options': q.options, 'solution': plain(q.solution), 'errors': q.errors}
-                    for q in questions]} for part, questions in self.sections.items()]}
+                    for q in questions]} for part, questions in self.sections.items() if part in self.seen]}
+
+    def _is_mcq_part(self, part):
+        """Return True if this part uses MCQ (A/B/C/D) shuffling."""
+        return self.subject == 'tieng_anh' or part == 'I'
 
 
 def renumber(block, number):
@@ -482,7 +493,7 @@ def heading_paragraph(value, size=26, bold=True, italic=False, color='000000', a
     return p
 
 
-def exam_heading(exam, code, department, school):
+def exam_heading(exam, code, department, school, subject='toan'):
     width = 10000
     if exam.sectpr is not None:
         page = exam.sectpr.find('w:pgSz', NS)
@@ -504,10 +515,16 @@ def exam_heading(exam, code, department, school):
         etree.SubElement(grid, tag('gridCol')).set(tag('w'), str(column_width))
     row = etree.SubElement(table, tag('tr'))
     etree.SubElement(etree.SubElement(row, tag('trPr')), tag('cantSplit'))
+    if subject == 'tieng_anh':
+        mon_text = 'MÔN: TIẾNG ANH'
+        tgian_text = 'Thời gian làm bài: 60 phút'
+    else:
+        mon_text = 'MÔN: TOÁN'
+        tgian_text = 'Thời gian làm bài: 90 phút'
     lines = [
         [heading_paragraph(department.upper(), 24, False), heading_paragraph(school.upper(), 24)],
-        [heading_paragraph('ĐỀ THI THỬ TN THPT 2027', 28), heading_paragraph('MÔN: TOÁN', 26),
-         heading_paragraph('Thời gian làm bài: 90 phút', 24, False, True)],
+        [heading_paragraph('ĐỀ THI THỬ TN THPT 2027', 28), heading_paragraph(mon_text, 26),
+         heading_paragraph(tgian_text, 24, False, True)],
     ]
     for column_width, content in zip(widths, lines):
         cell = etree.SubElement(row, tag('tc'))
@@ -525,21 +542,22 @@ def render_document(exam, order, code, teacher, department, school):
     body = root.find('w:body', NS)
     for child in list(body):
         body.remove(child)
-    body.extend(exam_heading(exam, code, department, school))
+    body.extend(exam_heading(exam, code, department, school, subject=exam.subject))
     for part, questions in order.items():
         body.extend(deepcopy(exam.headings[part]))
         for number, q in enumerate(questions, 1):
-            blocks = shuffled_blocks(q) if part == 'I' else deepcopy(q.blocks)
-            if teacher and part == 'II':
+            is_mcq = exam._is_mcq_part(part)
+            blocks = shuffled_blocks(q) if is_mcq else deepcopy(q.blocks)
+            if teacher and part == 'II' and not is_mcq:
                 mark_tf_answers(blocks, q.answer)
             renumber(blocks[0], number)
             for block in blocks:
                 if not teacher:
-                    hide_marks(block, part)
+                    hide_marks(block, 'I' if is_mcq else part)
                 body.append(block)
             if teacher:
                 solution = deepcopy(q.solution)
-                body.extend(remap_solution(solution, q.option_order) if part == 'I' else solution)
+                body.extend(remap_solution(solution, q.option_order) if is_mcq else solution)
     if exam.sectpr is not None:
         body.append(deepcopy(exam.sectpr))
     output = BytesIO()
@@ -573,7 +591,8 @@ def answer_workbook(variants):
 
 
 def export_shuffle(content, count=4, start_code='0101', include_solutions=True, seed=None, variant_index=None,
-                   department='SỞ GDĐT ................................', school='TRƯỜNG THPT ........................'):
+                   department='SỞ GDĐT ................................', school='TRƯỜNG THPT ........................',
+                   subject='toan'):
     if not 1 <= count <= 50:
         raise ValueError('Số đề phải từ 1 đến 50.')
     if not re.fullmatch(r'\d{3,4}', start_code) or int(start_code) + count - 1 > 9999:
@@ -583,22 +602,25 @@ def export_shuffle(content, count=4, start_code='0101', include_solutions=True, 
     department, school = department.strip(), school.strip()
     if not department or not school or max(len(department), len(school)) > 120:
         raise ValueError('Tên Sở GDĐT và Trường THPT cần có nội dung, tối đa 120 ký tự mỗi dòng.')
-    exam = Exam(content)
+    exam = Exam(content, subject=subject)
     if exam.errors:
         raise ValueError('\n'.join(exam.errors))
-    possibilities = math.prod(math.factorial(len(q)) for q in exam.sections.values()) * 24 ** len(exam.sections['I'])
+    all_sections = {k: v for k, v in exam.sections.items() if v}
+    possibilities = math.prod(math.factorial(len(q)) for q in all_sections.values()) * math.factorial(4) ** sum(1 for part in all_sections if exam._is_mcq_part(part))
     if count > possibilities:
         raise ValueError(f'Đề này chỉ tạo được {possibilities} cách trộn khác nhau.')
     rng = random.Random(seed)
     variants, seen = [], set()
     while len(variants) < count:
-        order = {part: rng.sample(q, len(q)) for part, q in exam.sections.items()}
-        shuffled = []
-        for q in order['I']:
-            option_order = tuple(rng.sample(range(4), 4))
-            answer = 'ABCD'[option_order.index('ABCD'.index(q.answer))]
-            shuffled.append(replace(q, answer=answer, option_order=option_order))
-        order['I'] = shuffled
+        order = {part: rng.sample(q, len(q)) for part, q in exam.sections.items() if q}
+        for part, questions in list(order.items()):
+            if exam._is_mcq_part(part):
+                shuffled = []
+                for q in questions:
+                    option_order = tuple(rng.sample(range(4), 4))
+                    answer = 'ABCD'[option_order.index('ABCD'.index(q.answer))]
+                    shuffled.append(replace(q, answer=answer, option_order=option_order))
+                order[part] = shuffled
         signature = tuple(tuple((q.number, q.option_order) for q in questions) for questions in order.values())
         if signature in seen:
             continue
@@ -606,7 +628,7 @@ def export_shuffle(content, count=4, start_code='0101', include_solutions=True, 
         variants.append((str(int(start_code) + len(variants)).zfill(len(start_code)), order))
     output = BytesIO()
     mapping = {code: {part: [{'cau_moi': i, 'cau_goc': q.number, 'dap_an': q.answer,
-                            **({'phuong_an_moi_sang_goc': {new: 'ABCD'[old] for new, old in zip('ABCD', q.option_order)}} if part == 'I' else {})}
+                            **({'phuong_an_moi_sang_goc': {new: 'ABCD'[old] for new, old in zip('ABCD', q.option_order)}} if exam._is_mcq_part(part) else {})}
                             for i, q in enumerate(questions, 1)] for part, questions in order.items()}
                for code, order in variants}
     selected = variants if variant_index is None else [variants[variant_index]]
