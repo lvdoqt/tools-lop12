@@ -15,11 +15,14 @@ from openpyxl.styles import Font, PatternFill
 W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
 NS = {'w': W, 'm': 'http://schemas.openxmlformats.org/officeDocument/2006/math'}
 SECTION = re.compile(r'^\s*PHẦN\s+(III|II|I)\b', re.I)
-QUESTION = re.compile(r'^\s*Câu\s+(\d+)\s*[.:]', re.I)
+QUESTION = re.compile(r'^\s*(?:Câu|Question)\s+(\d+)\s*[.:]', re.I)
 SOLUTION = re.compile(r'^\s*Lời\s+giải\s*[:.]?\s*$', re.I)
 SHORT = re.compile(r'^\s*(?:Đáp\s*án|Đáp\s*số|Trả\s*lời)\s*:\s*([+\-−]?\d+(?:[.,]\d+)?)\s*[.]?\s*$', re.I)
 TF_SOLUTION = re.compile(r'(?<!\w)([abcd])\s*\)\s*[:.\-]?\s*(ĐÚNG|SAI)\b', re.I)
 MCQ_LABEL = re.compile(r'(?<!\S)([ABCD])\s*[.)]')
+CLOZE_HINT_RE = re.compile(r'(?:blanks?\s+from\s+\d+\s+to\s+\d+|\(\d+\)_{3,}|chỗ\s+trống)', re.I)
+LISTEN_HINT_RE = re.compile(r'(?:listen|recording|audio|nghe)', re.I)
+GROUP_INDICATOR_RE = re.compile(r'^(?:Read\s+the\s+following|Mark\s+the\s+letter|Section\s+\d+|LISTENING|PART\s+\d+|PHẦN\s+[IVX]+)', re.I)
 MAX_UPLOAD = 4 * 1024 * 1024
 MAX_OUTPUT = 4 * 1024 * 1024
 
@@ -97,49 +100,125 @@ class Exam:
             raise ValueError('File Word không có nội dung.')
         if self.body.xpath('.//w:ins | .//w:del | .//w:sdt | .//w:altChunk', namespaces=NS):
             raise ValueError('Hãy chấp nhận các thay đổi và chuyển content control thành văn bản trước khi trộn.')
-        self.prefix, self.headings = [], {s: [] for s in ('I', 'II', 'III')}
-        self.sections = {s: [] for s in self.headings}
+
+        self.prefix = []
+        self.headings = {}
+        self.sections = {}
+        self.freeze_map = {}
         self.errors, self.warnings = [], []
-        section, current, solving = None, None, False
-        seen = []
+        self.seen = []
         self.sectpr = None
+
+        raw_blocks = []
         for block in self.body:
             if block.tag == tag('sectPr'):
                 self.sectpr = block
                 continue
             if block.tag not in (tag('p'), tag('tbl'), tag('bookmarkStart'), tag('bookmarkEnd')):
                 raise ValueError('Tài liệu có khối nội dung chưa hỗ trợ. Hãy lưu câu hỏi bằng đoạn văn Word.')
-            value = text_map(block)[0] if block.tag == tag('p') else ''
-            heading, question = SECTION.match(value), QUESTION.match(value)
-            if heading:
-                section = heading[1].upper()
-                if section in seen:
-                    raise ValueError(f'Phần {section} xuất hiện nhiều lần. Mỗi file chỉ chứa một đề gốc.')
-                seen.append(section)
-                current, solving = None, False
-                self.headings[section].append(block)
-            elif question:
-                if section is None:
-                    raise ValueError('Có câu hỏi trước tiêu đề PHẦN I.')
-                current = Question(int(question[1]), [block])
-                self.sections[section].append(current)
-                solving = False
-            elif current is not None:
-                if SOLUTION.match(value):
-                    solving = True
-                (current.solution if solving else current.blocks).append(block)
-            elif section:
-                self.headings[section].append(block)
-            else:
-                self.prefix.append(block)
-            if block.tag == tag('tbl') and any(QUESTION.match(text_map(p)[0]) for p in paragraphs([block])):
-                raise ValueError('Câu hỏi nằm trong bảng chưa được hỗ trợ. Hãy đưa nhãn Câu n ra ngoài bảng; bảng trong nội dung vẫn được giữ.')
-        if not seen:
-            raise ValueError('Không tìm thấy tiêu đề PHẦN nào. Mỗi phần bắt đầu bằng "PHẦN I", "PHẦN II" hoặc "PHẦN III".')
-        order_map = {'I': 0, 'II': 1, 'III': 2}
-        if [order_map[s] for s in seen] != sorted(order_map[s] for s in seen):
-            raise ValueError('Các tiêu đề PHẦN phải xuất hiện theo đúng thứ tự I, II, III.')
-        self.seen = seen
+            raw_blocks.append(block)
+
+        # Check if document has standard PHẦN I, II, III
+        has_phan = any(SECTION.match(text_map(b)[0]) for b in raw_blocks if b.tag == tag('p'))
+
+        if self.subject == 'toan' or has_phan:
+            # Traditional section parsing (PHẦN I, II, III)
+            self.headings = {s: [] for s in ('I', 'II', 'III')}
+            self.sections = {s: [] for s in self.headings}
+            section, current, solving = None, None, False
+            seen = []
+            for block in raw_blocks:
+                value = text_map(block)[0] if block.tag == tag('p') else ''
+                heading, question = SECTION.match(value), QUESTION.match(value)
+                if heading:
+                    section = heading[1].upper()
+                    if section in seen:
+                        raise ValueError(f'Phần {section} xuất hiện nhiều lần. Mỗi file chỉ chứa một đề gốc.')
+                    seen.append(section)
+                    current, solving = None, False
+                    self.headings[section].append(block)
+                elif question:
+                    if section is None:
+                        raise ValueError('Có câu hỏi trước tiêu đề PHẦN.')
+                    current = Question(int(question[1]), [block])
+                    self.sections[section].append(current)
+                    solving = False
+                elif current is not None:
+                    if SOLUTION.match(value):
+                        solving = True
+                    (current.solution if solving else current.blocks).append(block)
+                elif section:
+                    self.headings[section].append(block)
+                else:
+                    self.prefix.append(block)
+                if block.tag == tag('tbl') and any(QUESTION.match(text_map(p)[0]) for p in paragraphs([block])):
+                    raise ValueError('Câu hỏi nằm trong bảng chưa được hỗ trợ. Hãy đưa nhãn Câu n ra ngoài bảng; bảng trong nội dung vẫn được giữ.')
+            if not seen:
+                raise ValueError('Không tìm thấy tiêu đề PHẦN nào. Mỗi phần bắt đầu bằng "PHẦN I", "PHẦN II" hoặc "PHẦN III".')
+            order_map = {'I': 0, 'II': 1, 'III': 2}
+            if [order_map[s] for s in seen] != sorted(order_map[s] for s in seen):
+                raise ValueError('Các tiêu đề PHẦN phải xuất hiện theo đúng thứ tự I, II, III.')
+            self.seen = seen
+        else:
+            # Group-based parsing for English without explicit PHẦN headers
+            groups = []
+            curr_hdr = []
+            curr_qs = []
+            curr_q = None
+            solving = False
+            exam_started = False
+
+            for block in raw_blocks:
+                value = text_map(block)[0] if block.tag == tag('p') else ''
+                q_match = QUESTION.match(value) if block.tag == tag('p') else None
+                is_hdr_indicator = bool(GROUP_INDICATOR_RE.match(value)) if block.tag == tag('p') else False
+
+                if q_match:
+                    exam_started = True
+                    solving = False
+                    curr_q = Question(int(q_match[1]), [block])
+                    curr_qs.append(curr_q)
+                elif curr_q is not None:
+                    if is_hdr_indicator:
+                        if curr_qs:
+                            groups.append({'header': curr_hdr, 'questions': curr_qs})
+                            curr_hdr = [block]
+                            curr_qs = []
+                            curr_q = None
+                            solving = False
+                    else:
+                        if SOLUTION.match(value):
+                            solving = True
+                        (curr_q.solution if solving else curr_q.blocks).append(block)
+                elif exam_started:
+                    curr_hdr.append(block)
+                else:
+                    if is_hdr_indicator or curr_hdr:
+                        curr_hdr.append(block)
+                    else:
+                        self.prefix.append(block)
+
+            if curr_qs:
+                groups.append({'header': curr_hdr, 'questions': curr_qs})
+
+            if not groups:
+                raise ValueError('Không tìm thấy câu hỏi nào trong đề (Question 1, Question 2... hoặc Câu 1, Câu 2...).')
+
+            for idx, g in enumerate(groups, 1):
+                hdr_texts = [text_map(b)[0].strip() for b in g['header'] if text_map(b)[0].strip()]
+                combined_hdr = ' '.join(hdr_texts)
+                is_cloze = bool(CLOZE_HINT_RE.search(combined_hdr))
+                is_listen = bool(LISTEN_HINT_RE.search(combined_hdr))
+                freeze = is_cloze or is_listen
+
+                q_min = min(q.number for q in g['questions'])
+                q_max = max(q.number for q in g['questions'])
+                name = f'Nhóm {idx} (Câu {q_min}–{q_max})'
+                self.seen.append(name)
+                self.headings[name] = g['header']
+                self.sections[name] = g['questions']
+                self.freeze_map[name] = freeze
+
         for section, questions in self.sections.items():
             if section not in self.seen:
                 continue
@@ -147,7 +226,7 @@ class Exam:
                 self.errors.append(f'Phần {section} chưa có câu hỏi.')
             numbers = [q.number for q in questions]
             if len(set(numbers)) != len(numbers):
-                self.errors.append(f'Phần {section} có số câu trùng nhau.')
+                self.errors.append(f'Phần/Nhóm {section} có số câu trùng nhau.')
             for question in questions:
                 self.read_answer(section, question)
                 self.errors.extend(f'Phần {section}, câu {question.number}: {e}' for e in question.errors)
@@ -187,7 +266,8 @@ class Exam:
         return False
 
     def read_answer(self, section, question):
-        if section == 'III' and self.subject != 'tieng_anh':
+        is_mcq = self._is_mcq_part(section)
+        if not is_mcq and section == 'III':
             matches = [SHORT.fullmatch(text_map(p)[0]) for p in paragraphs(question.solution)]
             answers = [m[1].replace('−', '-').replace('.', ',').lstrip('+') for m in matches if m]
             if len(answers) != 1:
@@ -195,7 +275,8 @@ class Exam:
             else:
                 question.answer = answers[0]
             return
-        pattern = re.compile(r'(?<!\S)([ABCD])\s*[.)]' if (section == 'I' or self.subject == 'tieng_anh') else r'(?<!\S)([abcd])\s*\)')
+
+        pattern = re.compile(r'(?<!\S)([ABCD])\s*[.)]' if is_mcq else r'(?<!\S)([abcd])\s*\)')
         for paragraph in paragraphs(question.blocks):
             value, owners = text_map(paragraph)
             matches = list(pattern.finditer(value))
@@ -204,45 +285,69 @@ class Exam:
                     'label': match[1], 'correct': self.underlined(owners[match.start(1)]),
                     'text': value[match.end():matches[i + 1].start() if i + 1 < len(matches) else len(value)].strip(),
                 })
-        expected = list('ABCD' if (section == 'I' or self.subject == 'tieng_anh') else 'abcd')
-        if [o['label'] for o in question.options] != expected:
-            question.errors.append('Không tách được đủ bốn nhãn ' + ', '.join(expected) + ' theo thứ tự.')
-        elif section == 'I' or self.subject == 'tieng_anh':
+        labels = [o['label'] for o in question.options]
+
+        if self.subject == 'tieng_anh':
+            if labels not in (list('ABCD'), list('AB'), list('ABC')):
+                self.warnings.append(f'Câu {question.number}: Nhãn lựa chọn ({", ".join(labels) if labels else "không có"}) khác chuẩn A-D.')
             correct = [o['label'] for o in question.options if o['correct']]
-            if len(correct) != 1:
-                question.errors.append('Cần gạch chân đúng một nhãn A/B/C/D của phương án đúng.')
-            else:
+            if len(correct) == 1:
                 question.answer = correct[0]
+            elif len(correct) > 1:
+                question.errors.append('Có nhiều hơn một đáp án được gạch chân.')
+            else:
+                question.answer = ''
+                self.warnings.append(f'Câu {question.number}: chưa gạch chân đáp án đúng.')
+        elif section == 'I':
+            if labels != list('ABCD'):
+                question.errors.append('Không tách được đủ bốn nhãn A, B, C, D theo thứ tự.')
+            else:
+                correct = [o['label'] for o in question.options if o['correct']]
+                if len(correct) != 1:
+                    question.errors.append('Cần gạch chân đúng một nhãn A/B/C/D của phương án đúng.')
+                else:
+                    question.answer = correct[0]
         else:
-            explicit = {}
-            for match in TF_SOLUTION.finditer(plain(question.solution)):
-                label, correct = match[1].lower(), match[2].upper() == 'ĐÚNG'
-                if label in explicit and explicit[label] != correct:
-                    question.errors.append(f'Lời giải ghi cả ĐÚNG và SAI cho ý {label}).')
-                explicit[label] = correct
-            has_underlines = any(o['correct'] for o in question.options)
-            if explicit and not has_underlines and len(explicit) != 4:
-                missing = ', '.join(label + ')' for label in 'abcd' if label not in explicit)
-                question.errors.append(f'Lời giải chưa ghi ĐÚNG/SAI cho ý {missing}; đề không có nhãn gạch chân để đối chiếu.')
-            for option in question.options:
-                label = option['label']
-                if label in explicit:
-                    if option['correct'] and not explicit[label]:
-                        question.errors.append(f'Ý {label}) được gạch chân nhưng Lời giải ghi SAI.')
-                    option['correct'] = explicit[label]
-            if question.errors:
-                return
-            question.answer = ''.join('Đ' if o['correct'] else 'S' for o in question.options)
+            # Part II True/False for Math
+            expected = list('abcd')
+            if labels != expected:
+                question.errors.append('Không tách được đủ bốn nhãn ' + ', '.join(expected) + ' theo thứ tự.')
+            else:
+                explicit = {}
+                for match in TF_SOLUTION.finditer(plain(question.solution)):
+                    label, correct = match[1].lower(), match[2].upper() == 'ĐÚNG'
+                    if label in explicit and explicit[label] != correct:
+                        question.errors.append(f'Lời giải ghi cả ĐÚNG và SAI cho ý {label}).')
+                    explicit[label] = correct
+                has_underlines = any(o['correct'] for o in question.options)
+                if explicit and not has_underlines and len(explicit) != 4:
+                    missing = ', '.join(label + ')' for label in 'abcd' if label not in explicit)
+                    question.errors.append(f'Lời giải chưa ghi ĐÚNG/SAI cho ý {missing}; đề không có nhãn gạch chân để đối chiếu.')
+                for option in question.options:
+                    label = option['label']
+                    if label in explicit:
+                        if option['correct'] and not explicit[label]:
+                            question.errors.append(f'Ý {label}) được gạch chân nhưng Lời giải ghi SAI.')
+                        option['correct'] = explicit[label]
+                if question.errors:
+                    return
+                question.answer = ''.join('Đ' if o['correct'] else 'S' for o in question.options)
 
     def summary(self):
-        return {'total': sum(map(len, self.sections.values())), 'errors': self.errors, 'warnings': self.warnings,
-                'sections': [{'part': part, 'count': len(questions), 'questions': [
-                    {'number': q.number, 'text': plain(q.blocks), 'answer': q.answer,
-                     'options': q.options, 'solution': plain(q.solution), 'errors': q.errors}
-                    for q in questions]} for part, questions in self.sections.items() if part in self.seen]}
+        return {
+            'total': sum(len(q) for p, q in self.sections.items() if p in self.seen),
+            'errors': self.errors,
+            'warnings': self.warnings,
+            'sections': [{'part': part, 'count': len(questions), 'freeze': self.freeze_map.get(part, False),
+                          'questions': [
+                              {'number': q.number, 'text': plain(q.blocks), 'answer': q.answer,
+                               'options': q.options, 'solution': plain(q.solution), 'errors': q.errors}
+                              for q in questions]}
+                         for part, questions in self.sections.items() if part in self.seen]
+        }
 
     def _is_mcq_part(self, part):
-        """Return True if this part uses MCQ (A/B/C/D) shuffling."""
+        """Return True if this part uses MCQ (A/B/C/D) options."""
         return self.subject == 'tieng_anh' or part == 'I'
 
 
@@ -251,7 +356,7 @@ def renumber(block, number):
     value = ''.join(n.text or '' for n in nodes)
     match = QUESTION.match(value)
     if not match:
-        raise ValueError('Không thể đánh lại số câu hỏi.')
+        raise ValueError(f'Không thể đánh lại số câu hỏi: {repr(value)}')
     start, end = match.span(1)
     offset = 0
     for node in nodes:
@@ -363,7 +468,6 @@ def shuffled_blocks(question):
     def blocks_with_options(blocks):
         for block in blocks:
             if block.tag == tag('tbl') and any(MCQ_LABEL.search(text_map(p)[0]) for p in paragraphs([block])):
-                # Option tables become paragraph rows, keeping all rich cell content.
                 for cell in block.findall('w:tr/w:tc', NS):
                     yield from blocks_with_options([b for b in cell if b.tag != tag('tcPr')])
             else:
@@ -393,10 +497,10 @@ def shuffled_blocks(question):
             trim_option(fragment)
             choices.append([fragment])
     if len(choices) != 4:
-        raise ValueError(f'Không thể tách phương án Phần I, câu {question.number}.')
+        # If not standard 4 choices (e.g. 2 choices for True/False), preserve original blocks
+        return deepcopy(question.blocks)
     reordered = [choices[index] for index in question.option_order]
     for index, blocks in enumerate(reordered):
-        # The label may be a single run or share a run with the whole option.
         node = next(n for n in blocks[0].iter(tag('t')) if n.text)
         node.text = 'ABCD'[index] + node.text[1:]
         run = node.getparent()
@@ -449,7 +553,6 @@ def hide_marks(block, section):
     pattern = re.compile(r'(?<!\S)([ABCD])\s*[.)]' if section == 'I' else r'(?<!\S)([abcd])\s*\)')
     for paragraph in paragraphs([block]):
         value, _ = text_map(paragraph)
-        # Clear answer underlining on option runs only; preserve underlined prose in stems.
         matches = list(pattern.finditer(value)) if section != 'III' else []
         if matches:
             for run in paragraph.iter(tag('r')):
@@ -543,11 +646,15 @@ def render_document(exam, order, code, teacher, department, school):
     for child in list(body):
         body.remove(child)
     body.extend(exam_heading(exam, code, department, school, subject=exam.subject))
+
+    question_counter = 1
     for part, questions in order.items():
         body.extend(deepcopy(exam.headings[part]))
-        for number, q in enumerate(questions, 1):
+        for q_idx, q in enumerate(questions, 1):
+            number = question_counter if exam.subject == 'tieng_anh' else q_idx
+            question_counter += 1
             is_mcq = exam._is_mcq_part(part)
-            blocks = shuffled_blocks(q) if is_mcq else deepcopy(q.blocks)
+            blocks = shuffled_blocks(q) if (is_mcq and len(q.options) == 4) else deepcopy(q.blocks)
             if teacher and part == 'II' and not is_mcq:
                 mark_tf_answers(blocks, q.answer)
             renumber(blocks[0], number)
@@ -555,7 +662,7 @@ def render_document(exam, order, code, teacher, department, school):
                 if not teacher:
                     hide_marks(block, 'I' if is_mcq else part)
                 body.append(block)
-            if teacher:
+            if teacher and q.solution:
                 solution = deepcopy(q.solution)
                 body.extend(remap_solution(solution, q.option_order) if is_mcq else solution)
     if exam.sectpr is not None:
@@ -606,31 +713,63 @@ def export_shuffle(content, count=4, start_code='0101', include_solutions=True, 
     if exam.errors:
         raise ValueError('\n'.join(exam.errors))
     all_sections = {k: v for k, v in exam.sections.items() if v}
-    possibilities = math.prod(math.factorial(len(q)) for q in all_sections.values()) * math.factorial(4) ** sum(1 for part in all_sections if exam._is_mcq_part(part))
+    possibilities = 1
+    for part, qs in all_sections.items():
+        if not exam.freeze_map.get(part, False):
+            possibilities *= math.factorial(len(qs))
+        if exam._is_mcq_part(part):
+            n_4opt = sum(1 for q in qs if len(q.options) == 4)
+            possibilities *= (24 ** n_4opt)
+        elif part == 'I':
+            possibilities *= (24 ** len(qs))
     if count > possibilities:
         raise ValueError(f'Đề này chỉ tạo được {possibilities} cách trộn khác nhau.')
     rng = random.Random(seed)
     variants, seen = [], set()
     while len(variants) < count:
-        order = {part: rng.sample(q, len(q)) for part, q in exam.sections.items() if q}
-        for part, questions in list(order.items()):
-            if exam._is_mcq_part(part):
-                shuffled = []
-                for q in questions:
+        order = {}
+        for part, q in exam.sections.items():
+            if not q:
+                continue
+            if exam.freeze_map.get(part, False):
+                group_qs = list(q)
+            else:
+                group_qs = rng.sample(q, len(q))
+            shuffled = []
+            for item in group_qs:
+                if exam._is_mcq_part(part) and len(item.options) == 4:
                     option_order = tuple(rng.sample(range(4), 4))
-                    answer = 'ABCD'[option_order.index('ABCD'.index(q.answer))]
-                    shuffled.append(replace(q, answer=answer, option_order=option_order))
-                order[part] = shuffled
+                    answer = 'ABCD'[option_order.index('ABCD'.index(item.answer))] if item.answer in 'ABCD' else item.answer
+                    shuffled.append(replace(item, answer=answer, option_order=option_order))
+                else:
+                    shuffled.append(deepcopy(item))
+            order[part] = shuffled
         signature = tuple(tuple((q.number, q.option_order) for q in questions) for questions in order.values())
         if signature in seen:
             continue
         seen.add(signature)
         variants.append((str(int(start_code) + len(variants)).zfill(len(start_code)), order))
     output = BytesIO()
-    mapping = {code: {part: [{'cau_moi': i, 'cau_goc': q.number, 'dap_an': q.answer,
-                            **({'phuong_an_moi_sang_goc': {new: 'ABCD'[old] for new, old in zip('ABCD', q.option_order)}} if exam._is_mcq_part(part) else {})}
-                            for i, q in enumerate(questions, 1)] for part, questions in order.items()}
-               for code, order in variants}
+
+    mapping = {}
+    for code, order in variants:
+        mapping[code] = {}
+        q_counter = 1
+        for part, questions in order.items():
+            part_list = []
+            for q_idx, q in enumerate(questions, 1):
+                new_num = q_counter if exam.subject == 'tieng_anh' else q_idx
+                q_counter += 1
+                item = {
+                    'cau_moi': new_num,
+                    'cau_goc': q.number,
+                    'dap_an': q.answer,
+                }
+                if len(q.options) == 4 and exam._is_mcq_part(part):
+                    item['phuong_an_moi_sang_goc'] = {new: 'ABCD'[old] for new, old in zip('ABCD', q.option_order)}
+                part_list.append(item)
+            mapping[code][part] = part_list
+
     selected = variants if variant_index is None else [variants[variant_index]]
     with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as archive:
         for code, order in selected:
@@ -641,15 +780,30 @@ def export_shuffle(content, count=4, start_code='0101', include_solutions=True, 
                 raise ValueError('Một lượt xuất vượt quá 4 MB. Hãy bỏ bản lời giải hoặc giảm dung lượng hình trong đề gốc.')
         archive.writestr('Dap_an_TNMaker_2025.xlsx', answer_workbook(variants))
         archive.writestr('Doi_chieu_cau_goc.json', json.dumps(mapping, ensure_ascii=False, indent=2))
-        archive.writestr('Huong_dan.txt', (
-            'Excel dùng mẫu nhập trực tiếp TNMaker 2025, một sheet Dữ liệu.\n'
-            'Hàng đầu: Câu\\Mã đề và các mã đề. Cột đầu đánh số liên tục qua ba phần.\n'
-            'Phần I: A/B/C/D; Phần II: chuỗi bốn ký tự Đ/S theo a,b,c,d; Phần III: số dùng dấu phẩy.\n'
-            'Trong TNMaker chọn phiếu 2025, đặt số câu từng phần đúng với đề rồi nhập file Excel.\n'
-            'Mẫu chính thức: https://tnmaker.net/nap-dap-an-phieu-tltn-2025/\n'
-            'Trộn câu trong cùng phần và trộn A–D ở Phần I; giữ thứ tự a–d ở Phần II.\n'
-            'De_*.docx: bản học sinh. loi_giai-*.docx: bản gạch chân đáp án đúng và lời giải.\n'
-            + '\n'.join(exam.warnings)).encode('utf-8'))
+        
+        if exam.subject == 'tieng_anh':
+            guide_text = (
+                'ĐỀ THI TIẾNG ANH - TRỘN THEO NHÓM BÀI ĐỌC / LISTENING\n'
+                'Các câu hỏi được đánh số liên tục từ 1 đến hết đề.\n'
+                'Các phần điền khuyết (Cloze) và Nghe giữ nguyên thứ tự câu, chỉ đảo phương án A-D.\n'
+                'Các câu độc lập hoặc bài đọc hiểu đảo cả câu lẫn phương án A-D.\n'
+                'De_*.docx: bản học sinh. loi_giai-*.docx: bản giáo viên có đáp án gạch chân.\n'
+                'Dap_an_TNMaker_2025.xlsx: file đáp án nạp trực tiếp vào ứng dụng TNMaker.\n'
+                + ('\nLƯU Ý:\n' + '\n'.join(exam.warnings) if exam.warnings else '')
+            )
+        else:
+            guide_text = (
+                'Excel dùng mẫu nhập trực tiếp TNMaker 2025, một sheet Dữ liệu.\n'
+                'Hàng đầu: Câu\\Mã đề và các mã đề. Cột đầu đánh số liên tục qua các phần.\n'
+                'Phần I: A/B/C/D; Phần II: chuỗi bốn ký tự Đ/S theo a,b,c,d; Phần III: số dùng dấu phẩy.\n'
+                'Trong TNMaker chọn phiếu 2025, đặt số câu từng phần đúng với đề rồi nhập file Excel.\n'
+                'Mẫu chính thức: https://tnmaker.net/nap-dap-an-phieu-tltn-2025/\n'
+                'Trộn câu trong cùng phần và trộn A–D ở Phần I; giữ thứ tự a–d ở Phần II.\n'
+                'De_*.docx: bản học sinh. loi_giai-*.docx: bản gạch chân đáp án đúng và lời giải.\n'
+                + ('\nLƯU Ý:\n' + '\n'.join(exam.warnings) if exam.warnings else '')
+            )
+        archive.writestr('Huong_dan.txt', guide_text.encode('utf-8'))
+
     if len(output.getvalue()) > MAX_OUTPUT:
         raise ValueError('ZIP vượt quá 4 MB. Hãy giảm số đề hoặc bỏ bản lời giải.')
     return output.getvalue()
